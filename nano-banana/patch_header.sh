@@ -1,0 +1,47 @@
+#!/bin/bash
+cat << 'INNER_EOF' > patch_header.patch
+--- src/components/Header.tsx
++++ src/components/Header.tsx
+@@ -1,5 +1,5 @@
+ import React from 'react';
+-import { Film, Sparkles, Settings, Download, Play, Sliders, Image as ImageIcon, Trash2 } from 'lucide-react';
++import { Film, Sparkles, Settings, Download, Play, Sliders, Image as ImageIcon, Trash2, Power } from 'lucide-react';
+ 
+ interface HeaderProps {
+   totalFrames: number;
+@@ -11,6 +11,7 @@
+   hasPrompts: boolean;
+   hasEntities?: boolean;
+   onClearData?: () => void;
++  onHardReset?: () => void;
+ }
+ 
+ export const Header: React.FC<HeaderProps> = ({
+@@ -23,6 +24,7 @@
+   hasPrompts,
+   hasEntities,
+   onClearData,
++  onHardReset,
+ }) => {
+   const progressPercent = totalFrames > 0 ? Math.round((completedFrames / totalFrames) * 100) : 0;
+ 
+@@ -116,6 +118,17 @@
+               <Trash2 className="w-4 h-4" />
+             </button>
+           )}
++
++          {/* Hard Reset Button */}
++          {onHardReset && (
++             <button
++              onClick={onHardReset}
++              className="p-2 rounded-lg bg-red-950 hover:bg-red-900 text-red-500 border border-red-900/50 transition-colors ml-2"
++              title="Hard Reset (Limpar tudo e recarregar)"
++            >
++              <Power className="w-4 h-4" />
++            </button>
++          )}
+         </div>
+       </div>
+     </header>
+INNER_EOF
+patch src/components/Header.tsx < patch_header.patch

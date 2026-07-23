@@ -1,0 +1,14 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -99,7 +99,10 @@
+         }
+ 
+         const savedFrames = await getDbItem('frames');
+-        if (savedFrames) setFrames(savedFrames);
++        if (savedFrames) {
++          const resetFrames = savedFrames.map((f: any) => f.status === 'generating' ? { ...f, status: 'pending' } : f);
++          setFrames(resetFrames);
++        }
+ 
+         const savedStylecard = await getDbItem('stylecard');
+         if (savedStylecard) setStylecard(savedStylecard);

@@ -1,0 +1,6 @@
+{
+  "name": "Nano Banana",
+  "description": "Automação para geração de imagens em massa a partir de legendas SRT com controle de estilo (Stylecard) e Gemini API",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
