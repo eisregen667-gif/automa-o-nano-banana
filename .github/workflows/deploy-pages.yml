@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - claude/leitura-completa-j90te7
   workflow_dispatch:
 
 permissions:
