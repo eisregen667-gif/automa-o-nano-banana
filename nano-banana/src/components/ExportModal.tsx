@@ -4,7 +4,7 @@ import { EntityRegistry, GeneratedFrame, GeneratorConfig, SrtBlock } from '../ty
 import { calculateDurationSeconds, generateFilename, stringifySrt } from '../utils/srtParser';
 import { urlToPngBlob } from '../utils/imageExporter';
 import { logInfo, logSuccess, logError } from '../utils/logger';
-import { Download, FileText, FileCode, Archive, X, CheckCircle2, Sparkles, Users, Table } from 'lucide-react';
+import { Download, FileText, FileCode, Archive, X, CheckCircle2, Sparkles, Users, Table, Clapperboard } from 'lucide-react';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -34,6 +34,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const sortedCompletedFrames = [...frames]
     .filter((f) => f.status === 'completed' && f.imageUrl)
     .sort((a, b) => a.id - b.id);
+
+  const framesWithVideoPrompt = [...frames]
+    .filter((f) => f.videoPrompt)
+    .sort((a, b) => a.id - b.id);
+
+  // VIDEO_PROMPTS.txt: image filename followed by its motion prompt,
+  // in upload order, ready to paste into an image-to-video tool
+  const getVideoPromptsTxtContent = () => {
+    return framesWithVideoPrompt
+      .map((f) => {
+        const filename = generateFilename(f.id, f.timeStart, f.timeEnd, config.filenameTemplate);
+        return `${filename}\n${f.videoPrompt}`;
+      })
+      .join('\n\n');
+  };
 
   // Function to create and trigger ZIP download
   const handleDownloadZip = async () => {
@@ -105,6 +120,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         zip.file('PROMPTS.txt', promptsTxtContent);
       }
 
+      // Add VIDEO_PROMPTS.txt (image filename + image-to-video motion prompt)
+      if (framesWithVideoPrompt.length > 0) {
+        zip.file('VIDEO_PROMPTS.txt', getVideoPromptsTxtContent());
+      }
+
       // Add manifest.json (with entity_registry_version)
       const manifest = {
         exportedAt: new Date().toISOString(),
@@ -119,6 +139,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           durationSeconds: calculateDurationSeconds(f.timeStart, f.timeEnd),
           subtitleText: f.subtitleText,
           visualPrompt: f.visualPrompt,
+          videoPrompt: f.videoPrompt,
         })),
       };
       zip.file('manifest.json', JSON.stringify(manifest, null, 2));
@@ -166,6 +187,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const a = document.createElement('a');
     a.href = url;
     a.download = 'PROMPTS.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Download VIDEO_PROMPTS.txt (image-to-video pairing)
+  const handleDownloadVideoPromptsTxt = () => {
+    if (framesWithVideoPrompt.length === 0) return;
+
+    const blob = new Blob([getVideoPromptsTxtContent()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'VIDEO_PROMPTS.txt';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -277,8 +313,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             )}
           </div>
 
-          {/* Option 2, 3 & 4: Individual File Downloads */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Individual File Downloads */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               onClick={handleDownloadPromptsTxt}
               disabled={frames.length === 0}
@@ -288,6 +324,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div>
                 <p className="text-xs font-bold text-white">PROMPTS.txt</p>
                 <p className="text-[10px] text-slate-400">Padrão Veo Flow Sincronizado</p>
+              </div>
+            </button>
+
+            <button
+              onClick={handleDownloadVideoPromptsTxt}
+              disabled={framesWithVideoPrompt.length === 0}
+              className={`bg-slate-950 border rounded-xl p-3 text-left flex items-center gap-2.5 transition-colors group ${
+                framesWithVideoPrompt.length > 0
+                  ? 'hover:bg-slate-800 border-violet-500/40 cursor-pointer'
+                  : 'border-slate-800 opacity-50 cursor-not-allowed'
+              }`}
+              title={framesWithVideoPrompt.length === 0 ? 'Gere os Prompts de Vídeo na galeria primeiro' : 'Baixar prompts de movimento pareados com as imagens'}
+            >
+              <Clapperboard className="w-5 h-5 text-violet-400 group-hover:scale-110 transition-transform shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-white">VIDEO_PROMPTS.txt ({framesWithVideoPrompt.length})</p>
+                <p className="text-[10px] text-slate-400">Image-to-Video: arquivo da imagem + prompt de movimento</p>
               </div>
             </button>
 

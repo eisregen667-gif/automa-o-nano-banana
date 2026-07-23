@@ -68,6 +68,7 @@ export interface GeneratedFrame {
   subtitleText: string;
   visualPrompt: string;
   originalPrompt: string;
+  videoPrompt?: string;     // Image-to-video motion prompt (Pass 3)
   cameraShot?: string;      // e.g. "Close-up", "Wide shot", "Drone shot"
   mood?: string;            // e.g. "Dramatic", "Melancholic"
   sceneId?: string;         // e.g. "SCENE_01"

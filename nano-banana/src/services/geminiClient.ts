@@ -4,7 +4,7 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -230,6 +230,90 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
 
   frames.sort((a, b) => Number(a.id) - Number(b.id));
   return frames;
+}
+
+export interface VideoPromptInput {
+  id: number;
+  visualPrompt: string;
+  subtitleText: string;
+  durationSeconds: number;
+}
+
+function fallbackVideoPrompt(item: VideoPromptInput): string {
+  return `Slow cinematic push-in on the existing scene, subtle natural motion of the subject, gentle ambient atmosphere (drifting light and air movement), single continuous shot, preserve composition and style, ${item.durationSeconds || 5} seconds`;
+}
+
+/**
+ * PASSADA 3: converte cada frame em um prompt de movimento (image-to-video)
+ */
+export async function generateVideoPrompts(
+  items: VideoPromptInput[],
+  apiKey?: string
+): Promise<Record<number, string>> {
+  const result: Record<number, string> = {};
+  if (items.length === 0) return result;
+
+  const key = apiKey?.trim();
+  if (!key) {
+    logWarn(`Sem chave API: gerando prompts de vídeo genéricos para ${items.length} frames.`);
+    for (const item of items) result[item.id] = fallbackVideoPrompt(item);
+    return result;
+  }
+
+  const firstId = items[0].id;
+  const lastId = items[items.length - 1].id;
+  logInfo(`Passada 3: gerando prompts de vídeo (image-to-video) dos frames #${firstId} a #${lastId}...`);
+
+  try {
+    const ai = getClient(key);
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `Frames to animate (still image prompt + subtitle + clip duration in seconds):\n${JSON.stringify(items, null, 2)}`
+      }],
+      config: {
+        systemInstruction: PROMPT_VIDEO_DIRECTOR,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.INTEGER, description: 'ID do frame' },
+              videoPrompt: { type: Type.STRING, description: 'Prompt de movimento em inglês para image-to-video' }
+            },
+            required: ['id', 'videoPrompt']
+          }
+        }
+      }
+    });
+
+    const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
+    if (Array.isArray(parsed)) {
+      for (const entry of parsed) {
+        if (entry && typeof entry.videoPrompt === 'string' && entry.videoPrompt.trim()) {
+          result[Number(entry.id)] = entry.videoPrompt.trim();
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha na geração de prompts de vídeo (Passada 3):', err);
+    logError(`Passada 3: falha nos frames #${firstId}–#${lastId}: ${err?.message || err}`);
+  }
+
+  // Fallback for any frame the model missed
+  let missing = 0;
+  for (const item of items) {
+    if (!result[item.id]) {
+      result[item.id] = fallbackVideoPrompt(item);
+      missing++;
+    }
+  }
+  if (missing > 0) {
+    logWarn(`Passada 3: ${missing} frame(s) sem resposta do modelo receberam prompt de vídeo genérico.`);
+  }
+
+  return result;
 }
 
 /**

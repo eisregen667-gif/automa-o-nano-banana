@@ -8,14 +8,15 @@ import {
   EntityRegistry,
   ScriptEntity
 } from './types';
-import { parseSrt, generateFilename } from './utils/srtParser';
+import { parseSrt, generateFilename, calculateDurationSeconds } from './utils/srtParser';
 import { urlToPngBlob, downloadBlob } from './utils/imageExporter';
 import { getDbItem, setDbItem, clearDb } from './utils/db';
 import {
   parseEntities,
   parsePrompts,
   generateEntityReference,
-  generateImage
+  generateImage,
+  generateVideoPrompts
 } from './services/geminiClient';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
 import { ActivityLog } from './components/ActivityLog';
@@ -61,6 +62,7 @@ export default function App() {
   const [frames, setFrames] = useState<GeneratedFrame[]>([]);
   const [isAnalyzingEntities, setIsAnalyzingEntities] = useState<boolean>(false);
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState<boolean>(false);
+  const [isGeneratingVideoPrompts, setIsGeneratingVideoPrompts] = useState<boolean>(false);
 
   const [queueState, setQueueState] = useState<QueueProgressState>({
     total: 0,
@@ -472,6 +474,42 @@ export default function App() {
     });
   };
 
+  // PASSADA 3: Generate image-to-video motion prompts for all frames
+  const handleGenerateVideoPrompts = async () => {
+    const currentFrames = framesRef.current;
+    if (currentFrames.length === 0 || isGeneratingVideoPrompts) return;
+
+    setIsGeneratingVideoPrompts(true);
+    try {
+      const items = currentFrames.map((f) => ({
+        id: f.id,
+        visualPrompt: f.visualPrompt,
+        subtitleText: f.subtitleText,
+        durationSeconds: calculateDurationSeconds(f.timeStart, f.timeEnd)
+      }));
+
+      const batchSize = 20;
+      const promptMap: Record<number, string> = {};
+      for (let i = 0; i < items.length; i += batchSize) {
+        const batchResult = await generateVideoPrompts(items.slice(i, i + batchSize), config.customApiKey);
+        Object.assign(promptMap, batchResult);
+      }
+
+      setFrames((prev) => {
+        const next = prev.map((f) => (promptMap[f.id] ? { ...f, videoPrompt: promptMap[f.id] } : f));
+        setDbItem('frames', next);
+        return next;
+      });
+
+      logSuccess(`Passada 3 concluída: ${Object.keys(promptMap).length} prompts de vídeo gerados.`);
+    } catch (err: any) {
+      console.error('Failed to generate video prompts:', err);
+      logError(`Falha ao gerar prompts de vídeo: ${err?.message || err}`);
+    } finally {
+      setIsGeneratingVideoPrompts(false);
+    }
+  };
+
   const handleUpdateFramePrompt = (id: number, newPrompt: string) => {
     setFrames((prev) => {
       const next = prev.map((f) => (f.id === id ? { ...f, visualPrompt: newPrompt } : f));
@@ -583,7 +621,7 @@ export default function App() {
 
         {frames.length > 0 && (
           <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Film className="w-5 h-5 text-amber-400" />
@@ -593,6 +631,19 @@ export default function App() {
                   Visualize, edite e regenere frames individualmente conforme a história evolui.
                 </p>
               </div>
+
+              <button
+                onClick={handleGenerateVideoPrompts}
+                disabled={isGeneratingVideoPrompts}
+                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${
+                  isGeneratingVideoPrompts
+                    ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
+                    : 'bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border-violet-500/40 cursor-pointer'
+                }`}
+                title="Gera um prompt de movimento (image-to-video) para cada frame, com base na duração do bloco SRT"
+              >
+                🎬 {isGeneratingVideoPrompts ? 'Gerando Prompts de Vídeo...' : 'Gerar Prompts de Vídeo (Image-to-Video)'}
+              </button>
             </div>
 
             <GalleryGrid

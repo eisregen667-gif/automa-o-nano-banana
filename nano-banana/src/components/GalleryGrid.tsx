@@ -32,6 +32,7 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
 }) => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [copiedVideoId, setCopiedVideoId] = useState<number | null>(null);
   const [zoomedFrame, setZoomedFrame] = useState<GeneratedFrame | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'completed' | 'generating' | 'failed'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -45,6 +46,13 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
     navigator.clipboard.writeText(frame.visualPrompt);
     setCopiedId(frame.id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleCopyVideoPrompt = (frame: GeneratedFrame) => {
+    if (!frame.videoPrompt) return;
+    navigator.clipboard.writeText(frame.videoPrompt);
+    setCopiedVideoId(frame.id);
+    setTimeout(() => setCopiedVideoId(null), 2000);
   };
 
   if (frames.length === 0) {
@@ -244,6 +252,27 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
                     </p>
                   )}
                 </div>
+
+                {/* Video Motion Prompt (Image-to-Video) */}
+                {frame.videoPrompt && (
+                  <div className="space-y-1.5 bg-violet-950/30 p-3 rounded-xl border border-violet-500/30">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-violet-300 flex items-center gap-1">
+                        🎬 Prompt de Vídeo (Image-to-Video):
+                      </span>
+                      <button
+                        onClick={() => handleCopyVideoPrompt(frame)}
+                        className="p-1 hover:text-violet-300 text-slate-400 transition-colors"
+                        title="Copiar Prompt de Vídeo para colar na sua ferramenta"
+                      >
+                        {copiedVideoId === frame.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-violet-200/90 font-mono leading-relaxed line-clamp-3">
+                      {frame.videoPrompt}
+                    </p>
+                  </div>
+                )}
 
                 {/* Footer Actions */}
                 <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
