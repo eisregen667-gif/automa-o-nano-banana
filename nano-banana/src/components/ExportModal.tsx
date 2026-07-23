@@ -39,15 +39,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     .filter((f) => f.videoPrompt)
     .sort((a, b) => a.id - b.id);
 
-  // VIDEO_PROMPTS.txt: image filename followed by its motion prompt,
-  // in upload order, ready to paste into an image-to-video tool
+  // VIDEO_PROMPTS.txt: ONE motion prompt per line, in image order (001, 002...),
+  // matching the "Single Line" pattern of image-to-video batch tools.
+  // The filename <-> prompt pairing is preserved in manifest.json.
   const getVideoPromptsTxtContent = () => {
     return framesWithVideoPrompt
-      .map((f) => {
-        const filename = generateFilename(f.id, f.timeStart, f.timeEnd, config.filenameTemplate);
-        return `${filename}\n${f.videoPrompt}`;
-      })
-      .join('\n\n');
+      .map((f) => (f.videoPrompt || '').replace(/\s*\n\s*/g, ' ').trim())
+      .join('\n');
   };
 
   // Function to create and trigger ZIP download
@@ -340,7 +338,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <Clapperboard className="w-5 h-5 text-violet-400 group-hover:scale-110 transition-transform shrink-0" />
               <div>
                 <p className="text-xs font-bold text-white">VIDEO_PROMPTS.txt ({framesWithVideoPrompt.length})</p>
-                <p className="text-[10px] text-slate-400">Image-to-Video: arquivo da imagem + prompt de movimento</p>
+                <p className="text-[10px] text-slate-400">Image-to-Video: 1 prompt por linha, na ordem das imagens</p>
               </div>
             </button>
 
