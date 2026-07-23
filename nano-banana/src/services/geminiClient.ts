@@ -31,6 +31,40 @@ function cleanGeminiJson(rawText: string): string {
 
 const EMPTY_REGISTRY: EntityRegistry = { detected_niche: 'General', entities: [] };
 
+// Extrai o objeto JSON de uma resposta que pode conter texto/citações em volta
+// (comum quando o grounding com Google Search está ativo)
+function extractJsonObject(raw: string): any | null {
+  const cleaned = cleanGeminiJson(raw);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function normalizeRegistry(parsed: any): EntityRegistry | null {
+  if (parsed && Array.isArray(parsed.entities)) {
+    return parsed;
+  }
+  if (parsed && parsed.entities && typeof parsed.entities === 'object') {
+    return {
+      detected_niche: parsed.detected_niche || 'General',
+      detected_era: parsed.detected_era,
+      entities: Object.values(parsed.entities) as ScriptEntity[]
+    };
+  }
+  return null;
+}
+
 /**
  * PASSADA 1: análise do roteiro e extração do registro canônico de entidades
  */
@@ -48,9 +82,10 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
 
     // Attempt with Google Search grounding: the model researches real-world
     // facts (true materials, colors, sizes, period style) before writing
-    // each canonical description. Falls back to the ungrounded call if the
-    // API rejects the tool combination.
-    let responseText = '';
+    // each canonical description. Falls back to the structured ungrounded
+    // call if the grounded response fails or doesn't yield valid JSON.
+    let registry: EntityRegistry | null = null;
+
     try {
       logInfo('Passada 1: grounding com Google Search ativado — pesquisando fatos reais das entidades...');
       const groundedResponse = await ai.models.generateContent({
@@ -65,9 +100,15 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
           tools: [{ googleSearch: {} }]
         }
       });
-      responseText = groundedResponse.text || '';
+      registry = normalizeRegistry(extractJsonObject(groundedResponse.text || ''));
+      if (!registry) {
+        logWarn('Passada 1: resposta do grounding não veio em JSON válido. Refazendo no modo estruturado...');
+      }
     } catch (groundErr: any) {
       logWarn(`Grounding com Google Search indisponível (${groundErr?.message || groundErr}). Usando análise padrão...`);
+    }
+
+    if (!registry) {
       const response = await ai.models.generateContent({
         model: GEMINI_TEXT_MODEL,
         contents: [
@@ -80,22 +121,14 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
           responseMimeType: 'application/json'
         }
       });
-      responseText = response.text || '';
+      registry = normalizeRegistry(extractJsonObject(response.text || ''));
     }
 
-    const cleanedJson = cleanGeminiJson(responseText || '{}');
-    const parsed = JSON.parse(cleanedJson);
-
-    let registry: EntityRegistry = EMPTY_REGISTRY;
-    if (parsed && Array.isArray(parsed.entities)) {
-      registry = parsed;
-    } else if (parsed && parsed.entities && typeof parsed.entities === 'object') {
-      registry = {
-        detected_niche: parsed.detected_niche || 'General',
-        detected_era: parsed.detected_era,
-        entities: Object.values(parsed.entities) as ScriptEntity[]
-      };
+    if (!registry) {
+      logError('Passada 1: nenhuma das tentativas retornou um registro de entidades válido.');
+      return EMPTY_REGISTRY;
     }
+
     logSuccess(`Passada 1 concluída: ${registry.entities.length} entidades detectadas (nicho: ${registry.detected_niche}${registry.detected_era ? `, era: ${registry.detected_era}` : ''}).`);
     return registry;
   } catch (err: any) {
