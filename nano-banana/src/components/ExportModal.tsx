@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import JSZip from 'jszip';
 import { EntityRegistry, GeneratedFrame, GeneratorConfig, SrtBlock } from '../types';
 import { calculateDurationSeconds, generateFilename, stringifySrt } from '../utils/srtParser';
-import { urlToPngBlob } from '../utils/imageExporter';
+import { urlToPngBlob, urlToOptimizedBlob } from '../utils/imageExporter';
 import { logInfo, logSuccess, logError } from '../utils/logger';
 import { Download, FileText, FileCode, Archive, X, CheckCircle2, Sparkles, Users, Table, Clapperboard } from 'lucide-react';
 
@@ -53,26 +53,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       setIsZipping(true);
       setZipProgress(0);
-      logInfo(`Exportação iniciada: compactando ${sortedCompletedFrames.length} imagens em ZIP...`);
+      logInfo(`Exportação iniciada: ${sortedCompletedFrames.length} imagens em ordem sequencial, otimizadas para no máximo 1MB cada...`);
 
       const zip = new JSZip();
       const imgFolder = zip.folder('nano_banana_images');
       const refFolder = zip.folder('references');
 
-      // Add each image to zip as a TRUE PNG Blob
+      // Add each image to zip in perfect sequential order (001, 002...),
+      // compressed to at most 1MB each (PNG when it fits, otherwise JPEG)
+      const padLength = Math.max(3, String(sortedCompletedFrames.length).length);
+      const exportEntries: { frame: GeneratedFrame; filename: string }[] = [];
+
       for (let i = 0; i < sortedCompletedFrames.length; i++) {
         const frame = sortedCompletedFrames[i];
-        const filename = generateFilename(frame.id, frame.timeStart, frame.timeEnd, config.filenameTemplate);
+        const seq = i + 1;
 
         if (frame.imageUrl) {
           try {
-            const pngBlob = await urlToPngBlob(frame.imageUrl);
-            imgFolder?.file(filename, pngBlob);
+            const { blob, ext } = await urlToOptimizedBlob(frame.imageUrl);
+            const filename = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, ext, padLength);
+            imgFolder?.file(filename, blob);
+            exportEntries.push({ frame, filename });
           } catch (err) {
-            console.warn(`Failed to convert frame ${frame.id} to PNG blob, using raw fetch fallback:`, err);
+            console.warn(`Failed to optimize frame ${frame.id}, using raw fetch fallback:`, err);
             const res = await fetch(frame.imageUrl);
             const blob = await res.blob();
+            const filename = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, 'png', padLength);
             imgFolder?.file(filename, blob);
+            exportEntries.push({ frame, filename });
           }
         }
 
@@ -86,8 +94,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           const imageUrl = entityReferenceSheets[entityId];
           if (imageUrl) {
             try {
-              const pngBlob = await urlToPngBlob(imageUrl);
-              refFolder?.file(`REF_${entityId}.png`, pngBlob);
+              const { blob, ext } = await urlToOptimizedBlob(imageUrl);
+              refFolder?.file(`REF_${entityId}.${ext}`, blob);
             } catch (refErr) {
               console.warn(`Failed to convert entity reference sheet ${entityId}:`, refErr);
             }
@@ -104,8 +112,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
       // Add TIMELINE.csv (arquivo,start,end,duracao_segundos)
       const csvHeader = 'arquivo,start,end,duracao_segundos\n';
-      const csvRows = sortedCompletedFrames.map((f) => {
-        const filename = generateFilename(f.id, f.timeStart, f.timeEnd, config.filenameTemplate);
+      const csvRows = exportEntries.map(({ frame: f, filename }) => {
         const duration = calculateDurationSeconds(f.timeStart, f.timeEnd);
         return `"${filename}","${f.timeStart}","${f.timeEnd}",${duration}`;
       });
@@ -129,9 +136,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         entity_registry_version: '1.0',
         totalFrames: sortedCompletedFrames.length,
         detected_niche: entityRegistry?.detected_niche || 'General',
-        frames: sortedCompletedFrames.map((f) => ({
+        frames: exportEntries.map(({ frame: f, filename }) => ({
           id: f.id,
-          filename: generateFilename(f.id, f.timeStart, f.timeEnd, config.filenameTemplate),
+          filename,
           timeStart: f.timeStart,
           timeEnd: f.timeEnd,
           durationSeconds: calculateDurationSeconds(f.timeStart, f.timeEnd),

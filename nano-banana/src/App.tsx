@@ -9,7 +9,7 @@ import {
   ScriptEntity
 } from './types';
 import { parseSrt, generateFilename, calculateDurationSeconds } from './utils/srtParser';
-import { urlToPngBlob, downloadBlob } from './utils/imageExporter';
+import { urlToOptimizedBlob, downloadBlob } from './utils/imageExporter';
 import { getDbItem, setDbItem, clearDb } from './utils/db';
 import {
   parseEntities,
@@ -520,15 +520,19 @@ export default function App() {
 
   const handleDownloadSingle = async (frame: GeneratedFrame) => {
     if (!frame.imageUrl) return;
-    const filename = generateFilename(frame.id, frame.timeStart, frame.timeEnd, config.filenameTemplate);
+    // Sequential position (1-based) among all frames sorted by id, matching the ZIP order
+    const sortedIds = [...frames].sort((a, b) => a.id - b.id).map((f) => f.id);
+    const seq = sortedIds.indexOf(frame.id) + 1;
+    const padLength = Math.max(3, String(frames.length).length);
     try {
-      const pngBlob = await urlToPngBlob(frame.imageUrl);
-      downloadBlob(pngBlob, filename);
+      const { blob, ext } = await urlToOptimizedBlob(frame.imageUrl);
+      const filename = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, ext, padLength);
+      downloadBlob(blob, filename);
     } catch (err) {
-      console.warn('Failed to convert single frame to PNG blob, fallback to direct download:', err);
+      console.warn('Failed to optimize single frame, fallback to direct download:', err);
       const a = document.createElement('a');
       a.href = frame.imageUrl;
-      a.download = filename;
+      a.download = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, 'png', padLength);
       a.click();
     }
   };

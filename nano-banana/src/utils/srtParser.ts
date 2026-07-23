@@ -69,9 +69,11 @@ export function generateFilename(
   index: number,
   timeStart: string,
   timeEnd: string,
-  template: string = '{index}_{start}_{end}'
+  template: string = '{index}_{start}_{end}',
+  ext: string = 'png',
+  padLength: number = 3
 ): string {
-  const padIndex = String(index).padStart(3, '0');
+  const padIndex = String(index).padStart(Math.max(3, padLength), '0');
   const safeStart = timeToSafeString(timeStart);
   const safeEnd = timeToSafeString(timeEnd);
 
@@ -85,7 +87,7 @@ export function generateFilename(
     formatted = `${padIndex}_${formatted}`;
   }
 
-  return `${formatted}.png`;
+  return `${formatted}.${ext}`;
 }
 
 /**
