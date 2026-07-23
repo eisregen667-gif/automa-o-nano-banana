@@ -39,12 +39,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     .filter((f) => f.videoPrompt)
     .sort((a, b) => a.id - b.id);
 
-  // VIDEO_PROMPTS.txt: ONE motion prompt per line, without filenames, separated
-  // by a blank line, in image order (001, 002...) — the format image-to-video
-  // batch tools expect. The filename <-> prompt pairing lives in manifest.json.
+  // VIDEO_PROMPTS.txt: ONE motion prompt per line, prefixed with the same
+  // sequential number as the exported image (001, 002...) so the generated
+  // videos are saved in matching order, separated by a blank line.
   const getVideoPromptsTxtContent = () => {
+    const pad = Math.max(3, String(framesWithVideoPrompt.length).length);
     return framesWithVideoPrompt
-      .map((f) => (f.videoPrompt || '').replace(/\s*\n\s*/g, ' ').trim())
+      .map((f, i) => `${String(i + 1).padStart(pad, '0')} ${(f.videoPrompt || '').replace(/\s*\n\s*/g, ' ').trim()}`)
       .join('\n\n');
   };
 

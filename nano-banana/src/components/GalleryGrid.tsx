@@ -48,9 +48,16 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Sequential position (1-based, zero-padded) matching the exported image numbering
+  const getFrameSequence = (frame: GeneratedFrame): string => {
+    const sortedIds = [...frames].sort((a, b) => a.id - b.id).map((f) => f.id);
+    const pad = Math.max(3, String(frames.length).length);
+    return String(sortedIds.indexOf(frame.id) + 1).padStart(pad, '0');
+  };
+
   const handleCopyVideoPrompt = (frame: GeneratedFrame) => {
     if (!frame.videoPrompt) return;
-    navigator.clipboard.writeText(frame.videoPrompt);
+    navigator.clipboard.writeText(`${getFrameSequence(frame)} ${frame.videoPrompt}`);
     setCopiedVideoId(frame.id);
     setTimeout(() => setCopiedVideoId(null), 2000);
   };
@@ -258,7 +265,7 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
                   <div className="space-y-1.5 bg-violet-950/30 p-3 rounded-xl border border-violet-500/30">
                     <div className="flex items-center justify-between text-[11px]">
                       <span className="font-bold text-violet-300 flex items-center gap-1">
-                        🎬 Prompt de Vídeo (Image-to-Video):
+                        🎬 Prompt de Vídeo #{getFrameSequence(frame)} (Image-to-Video):
                       </span>
                       <button
                         onClick={() => handleCopyVideoPrompt(frame)}
