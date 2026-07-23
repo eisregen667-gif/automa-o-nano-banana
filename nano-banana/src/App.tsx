@@ -11,6 +11,12 @@ import {
 import { parseSrt, generateFilename } from './utils/srtParser';
 import { urlToPngBlob, downloadBlob } from './utils/imageExporter';
 import { getDbItem, setDbItem, clearDb } from './utils/db';
+import {
+  parseEntities,
+  parsePrompts,
+  generateEntityReference,
+  generateImage
+} from './services/geminiClient';
 import { SAMPLE_SRT_PRESETS } from './data/sampleSrt';
 import { Header } from './components/Header';
 import { StylecardSection } from './components/StylecardSection';
@@ -149,31 +155,14 @@ export default function App() {
     try {
       setIsAnalyzingEntities(true);
 
-      const response = await fetch('/api/srt/parse-entities', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          srtBlocks,
-          customApiKey: config.customApiKey
-        })
-      });
+      const registry = await parseEntities(srtBlocks, config.customApiKey);
 
-      const data = await response.json();
-
-      if (data.success && data.registry) {
-        setEntityRegistry(data.registry);
-        await setDbItem('entityRegistry', data.registry);
-        setActiveModal('entityReview');
-      } else {
-        // Fallback: If entity registry fails or comes back empty, go directly to prompt parsing
-        console.warn('Entity analysis failed or returned empty. Proceeding directly to prompts.');
-        await executePass2PromptGeneration(
-          entityRegistry || { detected_niche: 'General', entities: [] }
-        );
-      }
+      setEntityRegistry(registry);
+      await setDbItem('entityRegistry', registry);
+      setActiveModal('entityReview');
     } catch (err: any) {
       console.error('Failed in Pass 1 Entity Analysis:', err);
-      // Fallback
+      // Fallback: If entity analysis fails, go directly to prompt parsing
       await executePass2PromptGeneration(
         entityRegistry || { detected_niche: 'General', entities: [] }
       );
@@ -196,18 +185,9 @@ export default function App() {
 
         for (const entity of recommendedEntities) {
           try {
-            const refRes = await fetch('/api/entity/generate-reference', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                entity,
-                textStylecard: stylecard.textStyle,
-                customApiKey: config.customApiKey
-              })
-            });
-            const refData = await refRes.json();
-            if (refData.success && refData.imageUrl) {
-              newRefSheets[entity.id] = refData.imageUrl;
+            const refImageUrl = await generateEntityReference(entity, stylecard.textStyle, config.customApiKey);
+            if (refImageUrl) {
+              newRefSheets[entity.id] = refImageUrl;
             }
           } catch (refErr) {
             console.warn(`Failed to generate reference sheet for ${entity.id}:`, refErr);
@@ -218,42 +198,20 @@ export default function App() {
         await setDbItem('entityReferenceSheets', newRefSheets);
       }
 
-      // Call Pass 2 API in batches to avoid timeout
+      // Call Pass 2 in batches to keep each Gemini request small
       const batchSize = 10;
       let allFrames: any[] = [];
-      
+
       for (let i = 0; i < srtBlocks.length; i += batchSize) {
         const batch = srtBlocks.slice(i, i + batchSize);
-        const response = await fetch('/api/srt/parse-prompts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            srtBlocks: batch,
-            textStylecard: stylecard.textStyle,
-            entityRegistry: registryToUse,
-            referenceImageBase64: stylecard.referenceImageBase64,
-            customApiKey: config.customApiKey
-          })
-        });
-
-        if (!response.ok) {
-          let errMessage = 'Unknown API error';
-          try {
-            const errData = await response.json();
-            errMessage = errData.error || errMessage;
-          } catch(e) {
-            errMessage = `Server returned ${response.status} ${response.statusText}`;
-          }
-          throw new Error(errMessage);
-        }
-
-        const data = await response.json();
-        
-        if (data.success && Array.isArray(data.frames)) {
-          allFrames = [...allFrames, ...data.frames];
-        } else {
-           throw new Error(data.error || 'Erro ao gerar prompts visuais.');
-        }
+        const batchFrames = await parsePrompts(
+          batch,
+          registryToUse,
+          stylecard.textStyle,
+          stylecard.referenceImageBase64,
+          config.customApiKey
+        );
+        allFrames = [...allFrames, ...batchFrames];
       }
 
       if (allFrames.length > 0) {
@@ -322,28 +280,18 @@ export default function App() {
         }
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout
-
-      const response = await fetch('/api/image/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          prompt: frame.visualPrompt,
-          subtitleText: frame.subtitleText,
-          timecode: frame.timeStart,
-          styleText: stylecard.textStyle,
-          aspectRatio: stylecard.aspectRatio,
-          referenceImageBase64: stylecard.referenceImageBase64,
-          referenceImages: relevantRefImages,
-          model: relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
-          customApiKey: config.customApiKey
-        })
+      const data = await generateImage({
+        prompt: frame.visualPrompt,
+        subtitleText: frame.subtitleText,
+        timecode: frame.timeStart,
+        styleText: stylecard.textStyle,
+        aspectRatio: stylecard.aspectRatio,
+        referenceImageBase64: stylecard.referenceImageBase64,
+        referenceImages: relevantRefImages,
+        model: relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
+        apiKey: config.customApiKey
       });
-      clearTimeout(timeoutId);
 
-      const data = await response.json();
       if (data.success && data.imageUrl) {
         return { success: true, imageUrl: data.imageUrl };
       } else {

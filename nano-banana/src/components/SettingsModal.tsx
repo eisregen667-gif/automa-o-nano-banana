@@ -47,7 +47,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Key className="w-4 h-4 text-amber-400" />
-                Sua Chave API do Gemini (Opcional):
+                Sua Chave API do Gemini:
               </span>
               <span className="text-[10px] text-amber-400/80 font-normal">
                 Personal API Key
@@ -61,7 +61,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400/50 font-mono"
             />
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Insira sua chave para gerar imagens reais diretamente pela API do Google Gemini / Imagen 3 sem limitações. A chave é salva localmente no seu navegador.
+              Necessária para gerar prompts e imagens reais: as chamadas ao Google Gemini / Imagen 3 são feitas diretamente do seu navegador. A chave é salva apenas localmente, no seu navegador. Sem chave, o app gera imagens de demonstração (SVG). Crie a sua grátis em aistudio.google.com/apikey
             </p>
           </div>
 
