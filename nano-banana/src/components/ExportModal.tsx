@@ -39,13 +39,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     .filter((f) => f.videoPrompt)
     .sort((a, b) => a.id - b.id);
 
-  // VIDEO_PROMPTS.txt: ONE motion prompt per line, in image order (001, 002...),
-  // matching the "Single Line" pattern of image-to-video batch tools.
-  // The filename <-> prompt pairing is preserved in manifest.json.
+  // VIDEO_PROMPTS.txt: ONE motion prompt per line, without filenames, separated
+  // by a blank line, in image order (001, 002...) — the format image-to-video
+  // batch tools expect. The filename <-> prompt pairing lives in manifest.json.
   const getVideoPromptsTxtContent = () => {
     return framesWithVideoPrompt
       .map((f) => (f.videoPrompt || '').replace(/\s*\n\s*/g, ' ').trim())
-      .join('\n');
+      .join('\n\n');
   };
 
   // Function to create and trigger ZIP download
