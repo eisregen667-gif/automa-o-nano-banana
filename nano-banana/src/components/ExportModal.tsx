@@ -60,26 +60,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       const refFolder = zip.folder('references');
 
       // Add each image to zip in perfect sequential order (001, 002...),
-      // compressed to at most 1MB each (PNG when it fits, otherwise JPEG)
+      // compressed to at most 1MB each (PNG when it fits, otherwise JPEG).
+      // Each entry gets an incremental modification date (+1s per image) so
+      // sorting by name OR by date both yield the correct sequence.
       const padLength = Math.max(3, String(sortedCompletedFrames.length).length);
       const exportEntries: { frame: GeneratedFrame; filename: string }[] = [];
+      const baseTime = Date.now() - sortedCompletedFrames.length * 1000;
 
       for (let i = 0; i < sortedCompletedFrames.length; i++) {
         const frame = sortedCompletedFrames[i];
         const seq = i + 1;
+        const entryDate = new Date(baseTime + i * 1000);
 
         if (frame.imageUrl) {
           try {
             const { blob, ext } = await urlToOptimizedBlob(frame.imageUrl);
             const filename = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, ext, padLength);
-            imgFolder?.file(filename, blob);
+            imgFolder?.file(filename, blob, { date: entryDate });
             exportEntries.push({ frame, filename });
           } catch (err) {
             console.warn(`Failed to optimize frame ${frame.id}, using raw fetch fallback:`, err);
             const res = await fetch(frame.imageUrl);
             const blob = await res.blob();
             const filename = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, 'png', padLength);
-            imgFolder?.file(filename, blob);
+            imgFolder?.file(filename, blob, { date: entryDate });
             exportEntries.push({ frame, filename });
           }
         }
