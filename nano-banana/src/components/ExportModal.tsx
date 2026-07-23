@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { EntityRegistry, GeneratedFrame, GeneratorConfig, SrtBlock } from '../types';
 import { calculateDurationSeconds, generateFilename, stringifySrt } from '../utils/srtParser';
 import { urlToPngBlob } from '../utils/imageExporter';
+import { logInfo, logSuccess, logError } from '../utils/logger';
 import { Download, FileText, FileCode, Archive, X, CheckCircle2, Sparkles, Users, Table } from 'lucide-react';
 
 interface ExportModalProps {
@@ -39,6 +40,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       setIsZipping(true);
       setZipProgress(0);
+      logInfo(`Exportação iniciada: compactando ${sortedCompletedFrames.length} imagens em ZIP...`);
 
       const zip = new JSZip();
       const imgFolder = zip.folder('nano_banana_images');
@@ -141,9 +143,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      logSuccess(`Pacote ZIP exportado com ${sortedCompletedFrames.length} imagens, SRT, PROMPTS.txt e manifesto.`);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error generating zip:', err);
+      logError(`Falha na exportação do ZIP: ${err?.message || err}`);
       alert('Ocorreu um erro ao gerar o arquivo ZIP de exportação.');
     } finally {
       setIsZipping(false);

@@ -17,6 +17,8 @@ import {
   generateEntityReference,
   generateImage
 } from './services/geminiClient';
+import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
+import { ActivityLog } from './components/ActivityLog';
 import { SAMPLE_SRT_PRESETS } from './data/sampleSrt';
 import { Header } from './components/Header';
 import { StylecardSection } from './components/StylecardSection';
@@ -114,8 +116,15 @@ export default function App() {
 
         const savedStylecard = await getDbItem<StyleCard>('stylecard');
         if (savedStylecard) setStylecard(savedStylecard);
+
+        if (savedFrames && Array.isArray(savedFrames) && savedFrames.length > 0) {
+          logInfo(`Projeto anterior restaurado: ${savedFrames.length} frames carregados do navegador.`);
+        } else {
+          logInfo('Nano Banana pronto. Carregue um SRT e gere seus prompts visuais.');
+        }
       } catch (err) {
         console.warn('Could not load saved state from IndexedDB:', err);
+        logError('Não foi possível restaurar o estado salvo do navegador.');
       }
     }
     loadSavedState();
@@ -214,6 +223,8 @@ export default function App() {
         allFrames = [...allFrames, ...batchFrames];
       }
 
+      logSuccess(`Passada 2 concluída: ${allFrames.length} prompts visuais gerados.`);
+
       if (allFrames.length > 0) {
         const generatedFrames: GeneratedFrame[] = allFrames.map((f: any) => ({
           id: f.id,
@@ -246,6 +257,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Failed to parse prompts with Gemini:', err);
+      logError(`Falha ao gerar prompts visuais: ${err?.message || err}`);
       alert('Ocorreu uma falha ao gerar os prompts visuais.');
     } finally {
       setIsGeneratingPrompts(false);
@@ -325,6 +337,7 @@ export default function App() {
     }
 
     const concurrency = queueStateRef.current.concurrency || 4;
+    logInfo(`Fila iniciada: ${pendingFrames.length} imagens para gerar (lotes de ${concurrency}).`);
 
     try {
       for (let i = 0; i < pendingFrames.length; i += concurrency) {
@@ -346,6 +359,12 @@ export default function App() {
         await Promise.all(
           chunk.map(async (item) => {
             const res = await processFrameItem(item);
+
+            if (res.success) {
+              logSuccess(`Frame #${item.id}: imagem gerada com sucesso.`);
+            } else {
+              logError(`Frame #${item.id}: falha na geração — ${res.error || 'erro desconhecido'}.`);
+            }
 
             setFrames((prev) => {
               const next = prev.map((f) => {
@@ -370,10 +389,13 @@ export default function App() {
           })
         );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Queue processing error:', error);
+      logError(`Erro no processamento da fila: ${error?.message || error}`);
     } finally {
       isProcessingRef.current = false;
+      const finalFrames = framesRef.current;
+      logInfo(`Fila finalizada: ${finalFrames.filter((f) => f.status === 'completed').length} concluídas, ${finalFrames.filter((f) => f.status === 'failed').length} falhas.`);
       setQueueState((prev) => ({
         ...prev,
         inProgress: false,
@@ -384,21 +406,26 @@ export default function App() {
 
   const handlePauseQueue = () => {
     isPausedRef.current = true;
+    logWarn('Fila pausada pelo usuário.');
     setQueueState((prev) => ({ ...prev, isPaused: true }));
   };
 
   const handleResumeQueue = () => {
     isPausedRef.current = false;
+    logInfo('Fila retomada.');
     setQueueState((prev) => ({ ...prev, isPaused: false }));
   };
 
   const handleStopQueue = () => {
     isProcessingRef.current = false;
     isPausedRef.current = false;
+    logWarn('Fila interrompida pelo usuário.');
     setQueueState((prev) => ({ ...prev, inProgress: false, isPaused: false }));
   };
 
   const handleRetryFailed = () => {
+    const failedCount = framesRef.current.filter((f) => f.status === 'failed').length;
+    logInfo(`Refazendo ${failedCount} frame(s) com falha...`);
     setFrames((prev) =>
       prev.map((f) => (f.status === 'failed' ? { ...f, status: 'pending', error: undefined } : f))
     );
@@ -409,12 +436,19 @@ export default function App() {
   const handleRegenerateSingleFrame = async (id: number) => {
     const targetFrame = frames.find((f) => f.id === id);
     if (!targetFrame) return;
+    logInfo(`Frame #${id}: regenerando imagem individualmente...`);
 
     setFrames((prev) =>
       prev.map((f) => (f.id === id ? { ...f, status: 'generating', error: undefined } : f))
     );
 
     const res = await processFrameItem(targetFrame);
+
+    if (res.success) {
+      logSuccess(`Frame #${id}: imagem regenerada com sucesso.`);
+    } else {
+      logError(`Frame #${id}: falha na regeneração — ${res.error || 'erro desconhecido'}.`);
+    }
 
     setFrames((prev) => {
       const next = prev.map((f) => {
@@ -465,6 +499,7 @@ export default function App() {
     if (confirm('Tem certeza que deseja limpar TODOS os dados e começar de novo?')) {
       // Clear IndexedDB items
       await clearDb();
+      logWarn('Todos os dados do projeto foram limpos.');
 
       // Clear local state
       setRawSrtText('');
@@ -616,6 +651,9 @@ export default function App() {
           isProcessingPrompts={isGeneratingPrompts}
         />
       )}
+
+      {/* Painel flutuante de Log de Atividades */}
+      <ActivityLog />
     </div>
   );
 }

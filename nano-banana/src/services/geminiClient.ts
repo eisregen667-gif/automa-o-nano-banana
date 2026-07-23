@@ -6,6 +6,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
 import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
+import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
 // Gemini 3.1 Pro: modelo de texto usado nas análises de roteiro (Passadas 1 e 2) e reescritas de prompt
 const GEMINI_TEXT_MODEL = 'gemini-3.1-pro-preview';
@@ -35,9 +36,13 @@ const EMPTY_REGISTRY: EntityRegistry = { detected_niche: 'General', entities: []
  */
 export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Promise<EntityRegistry> {
   const key = apiKey?.trim();
-  if (!key || srtBlocks.length === 0) return EMPTY_REGISTRY;
+  if (!key || srtBlocks.length === 0) {
+    if (!key) logWarn('Sem chave API do Gemini: análise de entidades pulada (modo demonstração).');
+    return EMPTY_REGISTRY;
+  }
 
   try {
+    logInfo(`Passada 1: analisando roteiro completo (${srtBlocks.length} blocos) com Gemini 3.1 Pro...`);
     const ai = getClient(key);
     const compactSrt = srtBlocks.map((b) => `[${b.id}] ${b.text}`).join('\n');
 
@@ -57,19 +62,21 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
     const cleanedJson = cleanGeminiJson(response.text || '{}');
     const parsed = JSON.parse(cleanedJson);
 
+    let registry: EntityRegistry = EMPTY_REGISTRY;
     if (parsed && Array.isArray(parsed.entities)) {
-      return parsed;
-    }
-    if (parsed && parsed.entities && typeof parsed.entities === 'object') {
-      return {
+      registry = parsed;
+    } else if (parsed && parsed.entities && typeof parsed.entities === 'object') {
+      registry = {
         detected_niche: parsed.detected_niche || 'General',
         detected_era: parsed.detected_era,
         entities: Object.values(parsed.entities) as ScriptEntity[]
       };
     }
-    return EMPTY_REGISTRY;
-  } catch (err) {
+    logSuccess(`Passada 1 concluída: ${registry.entities.length} entidades detectadas (nicho: ${registry.detected_niche}${registry.detected_era ? `, era: ${registry.detected_era}` : ''}).`);
+    return registry;
+  } catch (err: any) {
     console.warn('[Nano Banana] Falha na análise de entidades (Passada 1):', err);
+    logError(`Passada 1 falhou: ${err?.message || err}. Prosseguindo sem registro de entidades.`);
     return EMPTY_REGISTRY;
   }
 }
@@ -128,8 +135,13 @@ export async function parsePrompts(
   const key = apiKey?.trim();
   if (!key) {
     // Sem chave de API: prompts simples (legenda + stylecard)
+    logWarn(`Sem chave API: gerando prompts simples para ${srtBlocks.length} blocos (legenda + stylecard).`);
     return srtBlocks.map((b) => fallbackFrame(b, textStylecard));
   }
+
+  const firstId = srtBlocks[0]?.id;
+  const lastId = srtBlocks[srtBlocks.length - 1]?.id;
+  logInfo(`Passada 2: gerando prompts visuais dos blocos #${firstId} a #${lastId}...`);
 
   const ai = getClient(key);
 
@@ -171,8 +183,9 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
 
     frames = JSON.parse(cleanGeminiJson(response.text || '[]'));
     if (!Array.isArray(frames)) frames = [];
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Nano Banana] Falha ao gerar prompts visuais (Passada 2):', err);
+    logError(`Passada 2: falha na geração dos blocos #${firstId}–#${lastId}: ${err?.message || err}`);
   }
 
   // Validation: retry any missing blocks with a targeted request
@@ -181,6 +194,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
     const missingBlocks = srtBlocks.filter((b) => !receivedIds.has(Number(b.id)));
 
     if (missingBlocks.length > 0) {
+      logWarn(`Passada 2: ${missingBlocks.length} bloco(s) faltante(s) na resposta. Reprocessando...`);
       try {
         const targetedUserPrompt = `Alguns blocos do SRT ficaram faltantes na geração inicial. Gere os prompts visuais APENAS para os seguintes blocos SRT faltantes:\n${JSON.stringify(missingBlocks, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${entityRegistryText}`;
 
@@ -230,9 +244,13 @@ export async function generateEntityReference(
   const fallback = () =>
     createFallbackCanvasImage(entity.canonical_description, entity.id, 'REF SHEET', textStylecard || '', '1:1');
 
-  if (!key || !entity.canonical_description) return fallback();
+  if (!key || !entity.canonical_description) {
+    logWarn(`Ficha de referência de ${entity.id}: usando imagem de demonstração (sem chave API).`);
+    return fallback();
+  }
 
   try {
+    logInfo(`Gerando ficha de referência visual da entidade ${entity.id}...`);
     const ai = getClient(key);
     const referencePrompt = `${entity.canonical_description}, full body, neutral gray studio background, soft even lighting, front view, no scene, no text, no watermark`;
 
@@ -249,14 +267,17 @@ export async function generateEntityReference(
       for (const part of candidates[0].content.parts) {
         if (part.inlineData && part.inlineData.data) {
           const mime = part.inlineData.mimeType || 'image/png';
+          logSuccess(`Ficha de referência de ${entity.id} gerada com sucesso.`);
           return `data:${mime};base64,${part.inlineData.data}`;
         }
       }
     }
   } catch (err: any) {
     console.warn(`[Nano Banana] Falha ao gerar ficha de referência da entidade ${entity.id}:`, err?.message || err);
+    logError(`Ficha de referência de ${entity.id} falhou: ${err?.message || err}`);
   }
 
+  logWarn(`Ficha de referência de ${entity.id}: usando imagem SVG de fallback.`);
   return fallback();
 }
 
@@ -375,6 +396,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
 
         if (isRateLimit && attempt < backoffDelays.length) {
           console.warn(`[Nano Banana] Rate limit (429) detectado. Aguardando ${backoffDelays[attempt]}ms antes do retry...`);
+          logWarn(`Limite de requisições da API (429): aguardando ${backoffDelays[attempt] / 1000}s antes de tentar novamente...`);
           await new Promise((resolve) => setTimeout(resolve, backoffDelays[attempt]));
           continue;
         }
@@ -401,6 +423,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
     // Smart Retry for Safety Policy Block: rewrite prompt neutrally via Gemini text
     const isSafetyError = errMsg.toLowerCase().includes('safety') || errMsg.toLowerCase().includes('policy') || errMsg.toLowerCase().includes('blocked');
     if (isSafetyError) {
+      logWarn('Bloqueio de política de segurança detectado: reescrevendo o prompt de forma neutra...');
       try {
         const rewriteResponse = await ai.models.generateContent({
           model: GEMINI_TEXT_MODEL,
@@ -422,6 +445,7 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
   // Attempt 2: Backup Imagen 3 model
   if (!generatedImageUrl) {
     try {
+      logInfo('Tentando modelo de backup Imagen 3...');
       const imgRes = await ai.models.generateImages({
         model: 'imagen-3.0-generate-002',
         prompt: activePrompt,
@@ -448,5 +472,6 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
   }
 
   console.warn('[Nano Banana] Fallback SVG acionado. Motivo:', generationErrorMsg || 'Nenhuma imagem inline retornada');
+  logWarn(`Geração por IA indisponível (${generationErrorMsg || 'sem imagem retornada'}): usando imagem SVG de demonstração.`);
   return { ...makeFallback(), error: generationErrorMsg || undefined };
 }
