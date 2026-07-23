@@ -9,6 +9,9 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Gemini 3.1 Pro: modelo de texto usado nas análises de roteiro (Passadas 1 e 2) e reescritas de prompt
+const GEMINI_TEXT_MODEL = 'gemini-3.1-pro-preview';
+
 // Increase JSON payload limit for base64 image uploads
 app.use(express.json({ limit: '25mb' }));
 
@@ -426,7 +429,7 @@ app.post('/api/srt/parse-entities', async (req, res) => {
     console.log('[Nano Banana] Pass 1: Extracting canonical entity registry with PROMPT_ENTITY_REGISTRY...');
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
+      model: GEMINI_TEXT_MODEL,
       contents: [
         {
           text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}`
@@ -512,7 +515,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
+      model: GEMINI_TEXT_MODEL,
       contents: promptPayload,
       config: {
         systemInstruction: PROMPT_VISUAL_DIRECTOR,
@@ -557,7 +560,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
           const targetedUserPrompt = `Alguns blocos do SRT ficaram faltantes na geração inicial. Gere os prompts visuais APENAS para os seguintes blocos SRT faltantes:\n${JSON.stringify(missingBlocks, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${entityRegistryText}`;
 
           const retryRes = await ai.models.generateContent({
-            model: 'gemini-3.1-pro-preview',
+            model: GEMINI_TEXT_MODEL,
             contents: [{ text: targetedUserPrompt }],
             config: {
               systemInstruction: PROMPT_VISUAL_DIRECTOR,
@@ -834,7 +837,7 @@ app.post('/api/image/generate', async (req, res) => {
         console.log('[Nano Banana] Safety policy block detected. Requesting neutral prompt rewrite from Gemini...');
         try {
           const rewriteResponse = await ai.models.generateContent({
-            model: 'gemini-3.1-pro-preview',
+            model: GEMINI_TEXT_MODEL,
             contents: [{
               text: `rewrite this image prompt to be fully policy-safe, keeping the same scene meaning:\n"${activePrompt}"`
             }]

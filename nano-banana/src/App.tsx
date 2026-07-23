@@ -5,7 +5,6 @@ import {
   GeneratedFrame,
   QueueProgressState,
   GeneratorConfig,
-  StyleBibleData,
   EntityRegistry,
   ScriptEntity
 } from './types';
@@ -107,9 +106,6 @@ export default function App() {
           }));
         }
 
-        const savedBible = await getDbItem<StyleBibleData>('styleBible');
-        if (savedBible) setStyleBible(savedBible);
-
         const savedStylecard = await getDbItem<StyleCard>('stylecard');
         if (savedStylecard) setStylecard(savedStylecard);
       } catch (err) {
@@ -164,9 +160,9 @@ export default function App() {
 
       const data = await response.json();
 
-      if (data.success && data.entityRegistry) {
-        setEntityRegistry(data.entityRegistry);
-        await setDbItem('entityRegistry', data.entityRegistry);
+      if (data.success && data.registry) {
+        setEntityRegistry(data.registry);
+        await setDbItem('entityRegistry', data.registry);
         setActiveModal('entityReview');
       } else {
         // Fallback: If entity registry fails or comes back empty, go directly to prompt parsing
@@ -288,7 +284,7 @@ export default function App() {
 
         setActiveModal('promptMatrix');
       } else {
-        alert(data.error || 'Erro ao gerar prompts visuais.');
+        alert('Erro ao gerar prompts visuais.');
       }
     } catch (err: any) {
       console.error('Failed to parse prompts with Gemini:', err);
@@ -416,14 +412,13 @@ export default function App() {
                 return f;
               });
               setDbItem('frames', next).catch(() => {});
+              setQueueState((q) => ({
+                ...q,
+                completed: next.filter((f) => f.status === 'completed').length,
+                failed: next.filter((f) => f.status === 'failed').length
+              }));
               return next;
             });
-
-            setQueueState((prev) => ({
-              ...prev,
-              completed: prev.completed + (res.success ? 1 : 0),
-              failed: prev.failed + (res.success ? 0 : 1)
-            }));
           })
         );
       }
@@ -459,6 +454,7 @@ export default function App() {
     setFrames((prev) =>
       prev.map((f) => (f.status === 'failed' ? { ...f, status: 'pending', error: undefined } : f))
     );
+    setQueueState((prev) => ({ ...prev, failed: 0 }));
     startQueueProcessing();
   };
 
@@ -485,6 +481,11 @@ export default function App() {
         return f;
       });
       setDbItem('frames', next);
+      setQueueState((q) => ({
+        ...q,
+        completed: next.filter((f) => f.status === 'completed').length,
+        failed: next.filter((f) => f.status === 'failed').length
+      }));
       return next;
     });
   };
@@ -528,15 +529,14 @@ export default function App() {
         completed: 0,
         failed: 0,
         inProgress: false,
-        isPaused: false
+        isPaused: false,
+        concurrency: 4
       });
       isProcessingRef.current = false;
       isPausedRef.current = false;
       
       // Ensure stylecard resets
       setStylecard({
-        id: '1',
-        name: 'Empty',
         textStyle: '',
         aspectRatio: '16:9'
       });
@@ -628,7 +628,7 @@ export default function App() {
             🍌 Nano Banana AI — Sistema de Automação de Visão em Massa
           </p>
           <p className="text-slate-500">
-            Powered by Gemini 3.6 Flash &amp; Imagen 3 Visão
+            Powered by Gemini 3.1 Pro &amp; Imagen 3 Visão
           </p>
         </div>
       </footer>
