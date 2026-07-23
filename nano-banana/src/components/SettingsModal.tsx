@@ -65,6 +65,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
           </div>
 
+          {/* Google Image Search (Custom Search API) */}
+          <div className="space-y-2 bg-slate-950 p-4 rounded-xl border border-sky-500/20">
+            <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-sky-400" />
+                Busca de Imagens Reais (Google Imagens — Opcional):
+              </span>
+            </label>
+            <input
+              type="password"
+              placeholder="Google Custom Search API Key (ex: AIzaSy...)"
+              value={config.googleSearchApiKey || ''}
+              onChange={(e) => onChangeConfig({ ...config, googleSearchApiKey: e.target.value })}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/50 font-mono"
+            />
+            <input
+              type="text"
+              placeholder="Search Engine ID / CX (ex: a1b2c3d4e5f6g7h8i)"
+              value={config.googleSearchCx || ''}
+              onChange={(e) => onChangeConfig({ ...config, googleSearchCx: e.target.value })}
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400/50 font-mono"
+            />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Permite buscar fotos reais no Google Imagens para usar como referência visual das Entidades Canônicas.
+              Crie grátis (100 buscas/dia): 1) ative a <strong>Custom Search API</strong> em console.cloud.google.com e gere a chave;
+              2) crie um mecanismo em programmablesearchengine.google.com marcando "Pesquisar em toda a web" + "Pesquisa de imagens" e copie o ID (CX).
+            </p>
+          </div>
+
           {/* Model Selection */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-200 flex items-center gap-2">

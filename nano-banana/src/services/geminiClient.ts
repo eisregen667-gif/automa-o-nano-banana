@@ -46,20 +46,44 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
     const ai = getClient(key);
     const compactSrt = srtBlocks.map((b) => `[${b.id}] ${b.text}`).join('\n');
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_TEXT_MODEL,
-      contents: [
-        {
-          text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}`
+    // Attempt with Google Search grounding: the model researches real-world
+    // facts (true materials, colors, sizes, period style) before writing
+    // each canonical description. Falls back to the ungrounded call if the
+    // API rejects the tool combination.
+    let responseText = '';
+    try {
+      logInfo('Passada 1: grounding com Google Search ativado — pesquisando fatos reais das entidades...');
+      const groundedResponse = await ai.models.generateContent({
+        model: GEMINI_TEXT_MODEL,
+        contents: [
+          {
+            text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}\n\nIMPORTANT: use Google Search to verify real-world facts (true materials, colors, dimensions, period-accurate details) for every entity that corresponds to a real artifact, place, person type or historical subject, and bake those verified facts into each canonical_description. Respond with ONLY the JSON object of the required schema — no commentary, no markdown fences.`
+          }
+        ],
+        config: {
+          systemInstruction: PROMPT_ENTITY_REGISTRY,
+          tools: [{ googleSearch: {} }]
         }
-      ],
-      config: {
-        systemInstruction: PROMPT_ENTITY_REGISTRY,
-        responseMimeType: 'application/json'
-      }
-    });
+      });
+      responseText = groundedResponse.text || '';
+    } catch (groundErr: any) {
+      logWarn(`Grounding com Google Search indisponível (${groundErr?.message || groundErr}). Usando análise padrão...`);
+      const response = await ai.models.generateContent({
+        model: GEMINI_TEXT_MODEL,
+        contents: [
+          {
+            text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}`
+          }
+        ],
+        config: {
+          systemInstruction: PROMPT_ENTITY_REGISTRY,
+          responseMimeType: 'application/json'
+        }
+      });
+      responseText = response.text || '';
+    }
 
-    const cleanedJson = cleanGeminiJson(response.text || '{}');
+    const cleanedJson = cleanGeminiJson(responseText || '{}');
     const parsed = JSON.parse(cleanedJson);
 
     let registry: EntityRegistry = EMPTY_REGISTRY;
