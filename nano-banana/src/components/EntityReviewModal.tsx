@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { EntityRegistry, ScriptEntity } from '../types';
-import { searchGoogleImages, fetchImageAsDataUrl, ImageSearchResult } from '../services/googleImageSearch';
-import { logError } from '../utils/logger';
-import { Users, Plus, Trash2, CheckCircle, Sparkles, X, Edit2, ShieldAlert, Search, Loader2 } from 'lucide-react';
+import { Users, Plus, Trash2, CheckCircle, Sparkles, X, Edit2, ShieldAlert } from 'lucide-react';
 
 interface EntityReviewModalProps {
   isOpen: boolean;
@@ -10,10 +8,6 @@ interface EntityReviewModalProps {
   registry: EntityRegistry;
   onSaveAndContinue: (updatedRegistry: EntityRegistry) => void;
   isProcessingPrompts?: boolean;
-  searchApiKey?: string;
-  searchCx?: string;
-  entityReferenceSheets?: Record<string, string>;
-  onSetReferenceSheet?: (entityId: string, dataUrl: string) => void | Promise<void>;
 }
 
 export const EntityReviewModal: React.FC<EntityReviewModalProps> = ({
@@ -22,71 +16,10 @@ export const EntityReviewModal: React.FC<EntityReviewModalProps> = ({
   registry,
   onSaveAndContinue,
   isProcessingPrompts = false,
-  searchApiKey,
-  searchCx,
-  entityReferenceSheets = {},
-  onSetReferenceSheet,
 }) => {
   const [entities, setEntities] = useState<ScriptEntity[]>([]);
   const [detectedNiche, setDetectedNiche] = useState('General');
   const [detectedEra, setDetectedEra] = useState('');
-
-  // Google image search state (per entity)
-  const [searchQueries, setSearchQueries] = useState<Record<string, string>>({});
-  const [searchResults, setSearchResults] = useState<Record<string, ImageSearchResult[]>>({});
-  const [searchingEntityId, setSearchingEntityId] = useState<string | null>(null);
-  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
-  const [searchErrors, setSearchErrors] = useState<Record<string, string>>({});
-
-  const hasSearchConfig = !!(searchApiKey?.trim() && searchCx?.trim());
-
-  const defaultQueryFor = (entity: ScriptEntity) => {
-    const base = entity.aliases[0] || entity.id;
-    return [base, detectedEra].filter(Boolean).join(' ');
-  };
-
-  const handleSearchImages = async (entity: ScriptEntity) => {
-    if (!hasSearchConfig) {
-      setSearchErrors((prev) => ({
-        ...prev,
-        [entity.id]: 'Configure a chave da Custom Search API e o CX nas Configurações (engrenagem no topo).'
-      }));
-      return;
-    }
-
-    const query = (searchQueries[entity.id] ?? defaultQueryFor(entity)).trim();
-    if (!query) return;
-
-    setSearchingEntityId(entity.id);
-    setSearchErrors((prev) => ({ ...prev, [entity.id]: '' }));
-    try {
-      const results = await searchGoogleImages(query, searchApiKey!.trim(), searchCx!.trim());
-      setSearchResults((prev) => ({ ...prev, [entity.id]: results }));
-      if (results.length === 0) {
-        setSearchErrors((prev) => ({ ...prev, [entity.id]: 'Nenhuma imagem encontrada. Tente outros termos.' }));
-      }
-    } catch (err: any) {
-      logError(`Google Imagens: falha na busca para ${entity.id}: ${err?.message || err}`);
-      setSearchErrors((prev) => ({ ...prev, [entity.id]: err?.message || 'Falha na busca de imagens.' }));
-    } finally {
-      setSearchingEntityId(null);
-    }
-  };
-
-  const handlePickImage = async (entity: ScriptEntity, result: ImageSearchResult) => {
-    if (!onSetReferenceSheet) return;
-    setDownloadingUrl(result.imageUrl);
-    setSearchErrors((prev) => ({ ...prev, [entity.id]: '' }));
-    try {
-      const dataUrl = await fetchImageAsDataUrl(result);
-      await onSetReferenceSheet(entity.id, dataUrl);
-      setSearchResults((prev) => ({ ...prev, [entity.id]: [] }));
-    } catch (err: any) {
-      setSearchErrors((prev) => ({ ...prev, [entity.id]: err?.message || 'Falha ao baixar a imagem.' }));
-    } finally {
-      setDownloadingUrl(null);
-    }
-  };
 
   useEffect(() => {
     if (registry) {
@@ -293,83 +226,6 @@ export const EntityReviewModal: React.FC<EntityReviewModalProps> = ({
                       placeholder="Descrição detalhada em inglês (idade, fisionomia, roupas, cores imutáveis...)"
                       className="w-full bg-slate-900 border border-slate-800 focus:border-amber-400 rounded-lg p-2.5 text-xs text-slate-200 font-sans focus:outline-none leading-relaxed"
                     />
-                  </div>
-
-                  {/* Google Image Search (real reference image) */}
-                  <div className="pt-2 border-t border-slate-800/60 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-[11px] font-medium text-sky-400 flex items-center gap-1.5">
-                        <Search className="w-3.5 h-3.5" />
-                        Imagem de Referência Real (Google Imagens):
-                      </label>
-                      {entityReferenceSheets[entity.id] && (
-                        <span className="flex items-center gap-2">
-                          <img
-                            src={entityReferenceSheets[entity.id]}
-                            alt={`Referência de ${entity.id}`}
-                            className="w-10 h-10 object-cover rounded-md border border-emerald-500/60"
-                          />
-                          <span className="text-[10px] text-emerald-400 font-semibold">Referência ativa</span>
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={searchQueries[entity.id] ?? defaultQueryFor(entity)}
-                        onChange={(e) => setSearchQueries((prev) => ({ ...prev, [entity.id]: e.target.value }))}
-                        placeholder="Termos de busca (ex: estátua Nossa Senhora Aparecida original)"
-                        className="flex-1 bg-slate-900 border border-slate-800 focus:border-sky-400 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => handleSearchImages(entity)}
-                        disabled={searchingEntityId === entity.id}
-                        className="px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                      >
-                        {searchingEntityId === entity.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Search className="w-3.5 h-3.5" />
-                        )}
-                        Buscar
-                      </button>
-                    </div>
-
-                    {searchErrors[entity.id] && (
-                      <p className="text-[11px] text-rose-400">{searchErrors[entity.id]}</p>
-                    )}
-
-                    {searchResults[entity.id] && searchResults[entity.id].length > 0 && (
-                      <div>
-                        <p className="text-[10px] text-slate-400 mb-1.5">
-                          Clique na melhor imagem para usá-la como referência visual desta entidade:
-                        </p>
-                        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                          {searchResults[entity.id].map((result) => (
-                            <button
-                              key={result.imageUrl}
-                              onClick={() => handlePickImage(entity, result)}
-                              disabled={downloadingUrl !== null}
-                              title={result.title}
-                              className="relative aspect-square rounded-lg overflow-hidden border border-slate-700 hover:border-sky-400 transition-colors disabled:opacity-60"
-                            >
-                              <img
-                                src={result.thumbnailUrl}
-                                alt={result.title}
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                              {downloadingUrl === result.imageUrl && (
-                                <span className="absolute inset-0 bg-slate-950/70 flex items-center justify-center">
-                                  <Loader2 className="w-4 h-4 text-sky-400 animate-spin" />
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}

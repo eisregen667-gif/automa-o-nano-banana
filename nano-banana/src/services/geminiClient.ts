@@ -57,7 +57,7 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
         model: GEMINI_TEXT_MODEL,
         contents: [
           {
-            text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}\n\nIMPORTANT: use Google Search to verify real-world facts (true materials, colors, dimensions, period-accurate details) for every entity that corresponds to a real artifact, place, person type or historical subject, and bake those verified facts into each canonical_description. Respond with ONLY the JSON object of the required schema — no commentary, no markdown fences.`
+            text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}\n\nIMPORTANT: use Google Search to verify real-world facts for every entity that corresponds to a real artifact, place, landscape or historical subject — true geography, architecture, materials, colors, dimensions, period-accurate state — and bake those verified facts into each canonical_description so real locations and objects are recreated faithfully and recognizably. For real or historical PEOPLE, research their documented era, role and general appearance, but describe a RECREATION ACTOR: keep the role-defining traits while deliberately changing identifiable facial features (docudrama style), never the person's actual likeness. Respond with ONLY the JSON object of the required schema — no commentary, no markdown fences.`
           }
         ],
         config: {

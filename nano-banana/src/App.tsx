@@ -47,16 +47,12 @@ export default function App() {
 
   const [config, setConfig] = useState<GeneratorConfig>(() => {
     const savedKey = typeof window !== 'undefined' ? (localStorage.getItem('nano_banana_api_key') || '') : '';
-    const savedSearchKey = typeof window !== 'undefined' ? (localStorage.getItem('nano_banana_gsearch_key') || '') : '';
-    const savedSearchCx = typeof window !== 'undefined' ? (localStorage.getItem('nano_banana_gsearch_cx') || '') : '';
     return {
       model: 'gemini-3.1-flash-lite-image',
       qualityResolution: '1K',
       customProvider: 'gemini',
       customApiKey: savedKey,
-      filenameTemplate: '{index}_{start}_{end}',
-      googleSearchApiKey: savedSearchKey,
-      googleSearchCx: savedSearchCx
+      filenameTemplate: '{index}_{start}_{end}'
     };
   });
 
@@ -162,15 +158,6 @@ export default function App() {
       localStorage.setItem('nano_banana_api_key', config.customApiKey);
     }
   }, [config.customApiKey]);
-
-  useEffect(() => {
-    if (config.googleSearchApiKey !== undefined) {
-      localStorage.setItem('nano_banana_gsearch_key', config.googleSearchApiKey);
-    }
-    if (config.googleSearchCx !== undefined) {
-      localStorage.setItem('nano_banana_gsearch_cx', config.googleSearchCx);
-    }
-  }, [config.googleSearchApiKey, config.googleSearchCx]);
 
   // PASSADA 1: Entity Analysis (PROMPT_ENTITY_REGISTRY)
   const handleGeneratePrompts = async () => {
@@ -717,15 +704,6 @@ export default function App() {
           registry={entityRegistry}
           onSaveAndContinue={handleSaveAndContinueEntities}
           isProcessingPrompts={isGeneratingPrompts}
-          searchApiKey={config.googleSearchApiKey}
-          searchCx={config.googleSearchCx}
-          entityReferenceSheets={entityReferenceSheets}
-          onSetReferenceSheet={async (entityId, dataUrl) => {
-            const next = { ...entityReferenceSheets, [entityId]: dataUrl };
-            setEntityReferenceSheets(next);
-            await setDbItem('entityReferenceSheets', next);
-            logSuccess(`Imagem real do Google definida como referência da entidade ${entityId}.`);
-          }}
         />
       )}
 

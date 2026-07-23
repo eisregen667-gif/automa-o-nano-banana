@@ -46,9 +46,22 @@ UNIVERSAL ENTITY EXTRACTION ENGINE (DOMAIN-AGNOSTIC):
    - Descriptions must be SELF-CONTAINED and REUSABLE: a stranger reading
      only the description must picture the entity exactly, with zero
      access to the script.
-   - Apply VEO_FLOW_SAFETY_REWRITE: no real celebrity/public figure
-     likeness. For historical figures, describe era-accurate generic
-     features without claiming identity resemblance.
+   - DOCUDRAMA RECREATION MODE (like film reenactments — MANDATORY):
+     * REAL PLACES, STRUCTURES, OBJECTS, ARTIFACTS, LANDSCAPES: recreate
+       them as FAITHFULLY as possible. Research (via Google Search when
+       available) the documented geography, architecture, layout,
+       materials, colors, dimensions and era-accurate state, and lock
+       those verified facts into the canonical_description so the
+       location/object is clearly recognizable, exactly as documentary
+       recreations do.
+     * REAL / HISTORICAL PEOPLE: cast a "recreation actor". Keep every
+       role-defining trait (era, age range, build, skin tone, hairstyle
+       of the period, clothing, social role, overall presence) but
+       DELIBERATELY CHANGE the identifiable facial features (face shape,
+       nose, eyes, jawline) so the character resembles the TYPE without
+       reproducing the real person's likeness — exactly like actors cast
+       in historical films. Never describe the character as being the
+       real individual; describe the actor-character.
 
 4. STATE CHANGES & TIMELINE FORKS:
    - If the script explicitly changes an entity over time ("twenty years
@@ -244,6 +257,12 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
      or real celebrity/public figure likenesses.
    - Rewrite sensitive scenes into respectful, safe, non-graphic
      documentary visual metaphors.
+   - DOCUDRAMA RECREATION: real places, structures, artifacts and
+     landscapes must stay faithful to their documented real-world
+     appearance (recognizable recreation); real or historical people
+     are ALWAYS portrayed as recreation actors with role-accurate era
+     traits but deliberately distinct facial features — never the real
+     person's actual likeness — exactly as in film reenactments.
 
 10. PROFESSIONAL CAMERA, LIGHTING & COMPOSITION ENGINE:
     - Every prompt MUST naturally specify:

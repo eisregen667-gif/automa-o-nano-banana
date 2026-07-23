@@ -94,8 +94,6 @@ export interface GeneratorConfig {
   customProvider: 'gemini' | 'fal_ai' | 'replicate' | 'leonardo' | 'canvas_demo';
   customApiKey?: string;
   filenameTemplate: '{index}_{start}_{end}' | '{index}_{start}' | 'frame_{index}';
-  googleSearchApiKey?: string;  // Google Custom Search API key (busca de imagens reais)
-  googleSearchCx?: string;      // Programmable Search Engine ID (CX)
 }
 
 export interface ParsePromptsResponse {
