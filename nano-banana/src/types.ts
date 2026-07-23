@@ -69,6 +69,7 @@ export interface GeneratedFrame {
   visualPrompt: string;
   originalPrompt: string;
   videoPrompt?: string;     // Image-to-video motion prompt (Pass 3)
+  isTitleCard?: boolean;    // Cartela de documentário (texto na imagem, inserida na sequência)
   cameraShot?: string;      // e.g. "Close-up", "Wide shot", "Drone shot"
   mood?: string;            // e.g. "Dramatic", "Melancholic"
   sceneId?: string;         // e.g. "SCENE_01"

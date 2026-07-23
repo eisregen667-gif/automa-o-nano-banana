@@ -180,9 +180,15 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
 
                 {/* Overlays on Image */}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                  <span className="bg-slate-950/80 backdrop-blur-md text-amber-400 font-extrabold text-xs px-2.5 py-1 rounded-lg border border-slate-800">
-                    #{frame.id}
-                  </span>
+                  {frame.isTitleCard ? (
+                    <span className="bg-amber-400 text-slate-950 font-extrabold text-[10px] px-2.5 py-1 rounded-lg shadow-md">
+                      📋 CARTELA
+                    </span>
+                  ) : (
+                    <span className="bg-slate-950/80 backdrop-blur-md text-amber-400 font-extrabold text-xs px-2.5 py-1 rounded-lg border border-slate-800">
+                      #{frame.id}
+                    </span>
+                  )}
                   <span className="bg-slate-950/80 backdrop-blur-md text-slate-200 font-mono text-[11px] px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1">
                     <Clock className="w-3 h-3 text-amber-400" />
                     {frame.timeStart}

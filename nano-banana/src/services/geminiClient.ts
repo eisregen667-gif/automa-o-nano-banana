@@ -4,7 +4,7 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -287,6 +287,84 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
 
   frames.sort((a, b) => Number(a.id) - Number(b.id));
   return frames;
+}
+
+export interface TitleCardPlan {
+  insertAfterFrameId: number;
+  cardText: string;
+  imagePrompt: string;
+  videoPrompt: string;
+  designStyle?: string;
+}
+
+/**
+ * PASSADA DE CARTELAS: planeja os title cards do documentário
+ * (frequência editorial profissional + design variado coerente com o stylecard)
+ */
+export async function generateTitleCards(
+  frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
+  entityRegistry: EntityRegistry | null,
+  textStylecard?: string,
+  apiKey?: string
+): Promise<TitleCardPlan[]> {
+  const key = apiKey?.trim();
+  if (!key || frames.length === 0) {
+    if (!key) logWarn('Sem chave API do Gemini: geração de cartelas indisponível.');
+    return [];
+  }
+
+  logInfo(`Passada de Cartelas: analisando o roteiro (${frames.length} frames) para planejar os title cards...`);
+
+  try {
+    const ai = getClient(key);
+    const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`
+      }],
+      config: {
+        systemInstruction: PROMPT_TITLE_CARD_DIRECTOR,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              insertAfterFrameId: { type: Type.INTEGER, description: 'ID do frame após o qual a cartela entra (0 = antes do primeiro)' },
+              cardText: { type: Type.STRING, description: 'Texto exato da cartela (máx. 6 palavras, idioma do roteiro)' },
+              imagePrompt: { type: Type.STRING, description: 'Prompt de geração da imagem da cartela em inglês' },
+              videoPrompt: { type: Type.STRING, description: 'Prompt de animação ambiente com texto estático, em inglês' },
+              designStyle: { type: Type.STRING, description: 'Rótulo curto do estilo de design escolhido' }
+            },
+            required: ['insertAfterFrameId', 'cardText', 'imagePrompt', 'videoPrompt']
+          }
+        }
+      }
+    });
+
+    const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
+    if (!Array.isArray(parsed)) return [];
+
+    const plans: TitleCardPlan[] = parsed
+      .filter((p: any) => p && typeof p.cardText === 'string' && p.cardText.trim() && typeof p.imagePrompt === 'string')
+      .slice(0, 8)
+      .map((p: any) => ({
+        insertAfterFrameId: Number(p.insertAfterFrameId) || 0,
+        cardText: p.cardText.trim(),
+        imagePrompt: p.imagePrompt.trim(),
+        videoPrompt: (p.videoPrompt || '').trim(),
+        designStyle: p.designStyle
+      }));
+
+    logSuccess(`Passada de Cartelas concluída: ${plans.length} cartela(s) planejada(s): ${plans.map((p) => `"${p.cardText}"`).join(', ')}.`);
+    return plans;
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha na geração de cartelas:', err);
+    logError(`Passada de Cartelas falhou: ${err?.message || err}`);
+    return [];
+  }
 }
 
 export interface VideoPromptInput {

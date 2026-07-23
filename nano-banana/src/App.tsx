@@ -16,7 +16,8 @@ import {
   parsePrompts,
   generateEntityReference,
   generateImage,
-  generateVideoPrompts
+  generateVideoPrompts,
+  generateTitleCards
 } from './services/geminiClient';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
 import { ActivityLog } from './components/ActivityLog';
@@ -63,6 +64,7 @@ export default function App() {
   const [isAnalyzingEntities, setIsAnalyzingEntities] = useState<boolean>(false);
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState<boolean>(false);
   const [isGeneratingVideoPrompts, setIsGeneratingVideoPrompts] = useState<boolean>(false);
+  const [isGeneratingTitleCards, setIsGeneratingTitleCards] = useState<boolean>(false);
 
   const [queueState, setQueueState] = useState<QueueProgressState>({
     total: 0,
@@ -474,6 +476,76 @@ export default function App() {
     });
   };
 
+  // PASSADA DE CARTELAS: plan and insert documentary title cards into the sequence
+  const handleGenerateTitleCards = async () => {
+    const sceneFrames = framesRef.current.filter((f) => !f.isTitleCard);
+    if (sceneFrames.length === 0 || isGeneratingTitleCards) return;
+
+    setIsGeneratingTitleCards(true);
+    try {
+      const plans = await generateTitleCards(
+        sceneFrames.map((f) => ({
+          id: f.id,
+          timeStart: f.timeStart,
+          timeEnd: f.timeEnd,
+          subtitleText: f.subtitleText
+        })),
+        entityRegistry,
+        stylecard.textStyle,
+        config.customApiKey
+      );
+
+      if (plans.length === 0) {
+        logWarn('Nenhuma cartela foi planejada para este roteiro.');
+        return;
+      }
+
+      // Fractional ids place each card right after its anchor frame in the sequence
+      const usedIds = new Set(sceneFrames.map((f) => f.id));
+      const cardFrames: GeneratedFrame[] = plans.map((plan) => {
+        let cardId = plan.insertAfterFrameId + 0.5;
+        while (usedIds.has(cardId)) cardId += 0.01;
+        usedIds.add(cardId);
+
+        const anchor = sceneFrames.find((f) => f.id === plan.insertAfterFrameId);
+        const timecode = anchor ? anchor.timeEnd : (sceneFrames[0]?.timeStart || '00:00:00,000');
+
+        return {
+          id: cardId,
+          timeStart: timecode,
+          timeEnd: timecode,
+          subtitleText: `CARTELA: ${plan.cardText}`,
+          visualPrompt: plan.imagePrompt,
+          originalPrompt: plan.imagePrompt,
+          videoPrompt: plan.videoPrompt,
+          cameraShot: 'Title Card',
+          mood: plan.designStyle || 'Cinematic',
+          status: 'pending' as const,
+          isTitleCard: true
+        };
+      });
+
+      setFrames((prev) => {
+        const next = [...prev.filter((f) => !f.isTitleCard), ...cardFrames].sort((a, b) => a.id - b.id);
+        setDbItem('frames', next);
+        setQueueState((q) => ({
+          ...q,
+          total: next.length,
+          completed: next.filter((f) => f.status === 'completed').length,
+          failed: next.filter((f) => f.status === 'failed').length
+        }));
+        return next;
+      });
+
+      logSuccess(`${cardFrames.length} cartela(s) inserida(s) na sequência. Gere as imagens pela fila para renderizá-las.`);
+    } catch (err: any) {
+      console.error('Failed to generate title cards:', err);
+      logError(`Falha ao gerar cartelas: ${err?.message || err}`);
+    } finally {
+      setIsGeneratingTitleCards(false);
+    }
+  };
+
   // PASSADA 3: Generate image-to-video motion prompts for all frames
   const handleGenerateVideoPrompts = async () => {
     const currentFrames = framesRef.current;
@@ -481,7 +553,8 @@ export default function App() {
 
     setIsGeneratingVideoPrompts(true);
     try {
-      const items = currentFrames.map((f) => ({
+      // Cartelas keep their own static-text video prompt from the title card pass
+      const items = currentFrames.filter((f) => !f.isTitleCard).map((f) => ({
         id: f.id,
         visualPrompt: f.visualPrompt,
         subtitleText: f.subtitleText,
@@ -636,18 +709,33 @@ export default function App() {
                 </p>
               </div>
 
-              <button
-                onClick={handleGenerateVideoPrompts}
-                disabled={isGeneratingVideoPrompts}
-                className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${
-                  isGeneratingVideoPrompts
-                    ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
-                    : 'bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border-violet-500/40 cursor-pointer'
-                }`}
-                title="Gera um prompt de movimento (image-to-video) para cada frame, com base na duração do bloco SRT"
-              >
-                🎬 {isGeneratingVideoPrompts ? 'Gerando Prompts de Vídeo...' : 'Gerar Prompts de Vídeo (Image-to-Video)'}
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleGenerateTitleCards}
+                  disabled={isGeneratingTitleCards}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${
+                    isGeneratingTitleCards
+                      ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
+                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/40 cursor-pointer'
+                  }`}
+                  title="Detecta mudanças de local/tempo e insere cartelas profissionais (title cards) na sequência, com design coerente ao Stylecard"
+                >
+                  📋 {isGeneratingTitleCards ? 'Planejando Cartelas...' : 'Gerar Cartelas (Title Cards)'}
+                </button>
+
+                <button
+                  onClick={handleGenerateVideoPrompts}
+                  disabled={isGeneratingVideoPrompts}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${
+                    isGeneratingVideoPrompts
+                      ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
+                      : 'bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border-violet-500/40 cursor-pointer'
+                  }`}
+                  title="Gera um prompt de movimento (image-to-video) para cada frame, com base na duração do bloco SRT"
+                >
+                  🎬 {isGeneratingVideoPrompts ? 'Gerando Prompts de Vídeo...' : 'Gerar Prompts de Vídeo (Image-to-Video)'}
+                </button>
+              </div>
             </div>
 
             <GalleryGrid
