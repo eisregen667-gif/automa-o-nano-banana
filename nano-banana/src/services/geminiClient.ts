@@ -4,7 +4,7 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -364,6 +364,146 @@ export async function generateTitleCards(
     console.error('[Nano Banana] Falha na geração de cartelas:', err);
     logError(`Passada de Cartelas falhou: ${err?.message || err}`);
     return [];
+  }
+}
+
+export interface BrollPlan {
+  insertAfterFrameId: number;
+  label: string;
+  imagePrompt: string;
+  videoPrompt: string;
+}
+
+/**
+ * PASSADA DE B-ROLL: planeja cutaways de detalhe (máx. 1 por cena)
+ */
+export async function generateBrollPlans(
+  frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
+  entityRegistry: EntityRegistry | null,
+  textStylecard?: string,
+  apiKey?: string
+): Promise<BrollPlan[]> {
+  const key = apiKey?.trim();
+  if (!key || frames.length === 0) {
+    if (!key) logWarn('Sem chave API do Gemini: geração de B-roll indisponível.');
+    return [];
+  }
+
+  logInfo(`Passada de B-Roll: analisando o roteiro (${frames.length} frames) para planejar cutaways...`);
+
+  try {
+    const ai = getClient(key);
+    const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`
+      }],
+      config: {
+        systemInstruction: PROMPT_BROLL_DIRECTOR,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              insertAfterFrameId: { type: Type.INTEGER },
+              label: { type: Type.STRING },
+              imagePrompt: { type: Type.STRING },
+              videoPrompt: { type: Type.STRING }
+            },
+            required: ['insertAfterFrameId', 'label', 'imagePrompt', 'videoPrompt']
+          }
+        }
+      }
+    });
+
+    const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
+    if (!Array.isArray(parsed)) return [];
+
+    const plans: BrollPlan[] = parsed
+      .filter((p: any) => p && typeof p.imagePrompt === 'string' && p.imagePrompt.trim())
+      .map((p: any) => ({
+        insertAfterFrameId: Number(p.insertAfterFrameId) || 0,
+        label: (p.label || 'Detalhe').trim(),
+        imagePrompt: p.imagePrompt.trim(),
+        videoPrompt: (p.videoPrompt || '').trim()
+      }));
+
+    logSuccess(`Passada de B-Roll concluída: ${plans.length} cutaway(s) planejado(s).`);
+    return plans;
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha na geração de B-roll:', err);
+    logError(`Passada de B-Roll falhou: ${err?.message || err}`);
+    return [];
+  }
+}
+
+export interface QcResult {
+  approved: boolean;
+  issues: string[];
+  fixInstruction: string;
+}
+
+/**
+ * AUTO-QC: inspeciona uma imagem gerada com o Gemini (visão)
+ */
+export async function inspectImageQuality(params: {
+  imageUrl: string;
+  visualPrompt: string;
+  era?: string;
+  expectedEntities?: string[];
+  expectedText?: string;
+  apiKey?: string;
+}): Promise<QcResult | null> {
+  const key = params.apiKey?.trim();
+  if (!key || !params.imageUrl.startsWith('data:image')) return null;
+
+  try {
+    const ai = getClient(key);
+    const headerParts = params.imageUrl.split(';');
+    const mimeType = headerParts[0].replace('data:', '');
+    const base64Data = headerParts[1].replace('base64,', '');
+
+    const contextText = `Generation prompt: ${params.visualPrompt}\n` +
+      `Detected era: ${params.era || 'unspecified'}\n` +
+      `Expected entities in this shot:\n${(params.expectedEntities || []).map((d) => `- ${d}`).join('\n') || '- none registered'}\n` +
+      (params.expectedText ? `THIS IS A TITLE CARD. Expected exact text: "${params.expectedText}"` : 'This is a regular scene frame (no text should appear).');
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data: base64Data } },
+          { text: contextText }
+        ]
+      },
+      config: {
+        systemInstruction: PROMPT_IMAGE_QC,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            approved: { type: Type.BOOLEAN },
+            issues: { type: Type.ARRAY, items: { type: Type.STRING } },
+            fix_instruction: { type: Type.STRING }
+          },
+          required: ['approved', 'issues', 'fix_instruction']
+        }
+      }
+    });
+
+    const parsed = JSON.parse(cleanGeminiJson(response.text || '{}'));
+    if (typeof parsed?.approved !== 'boolean') return null;
+    return {
+      approved: parsed.approved,
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      fixInstruction: parsed.fix_instruction || ''
+    };
+  } catch (err: any) {
+    console.warn('[Nano Banana] Auto-QC falhou para uma imagem:', err?.message || err);
+    return null;
   }
 }
 

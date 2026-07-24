@@ -184,10 +184,23 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
                     <span className="bg-amber-400 text-slate-950 font-extrabold text-[10px] px-2.5 py-1 rounded-lg shadow-md">
                       📋 CARTELA
                     </span>
+                  ) : frame.isBroll ? (
+                    <span className="bg-teal-400 text-slate-950 font-extrabold text-[10px] px-2.5 py-1 rounded-lg shadow-md">
+                      🎞 B-ROLL
+                    </span>
                   ) : (
                     <span className="bg-slate-950/80 backdrop-blur-md text-amber-400 font-extrabold text-xs px-2.5 py-1 rounded-lg border border-slate-800">
                       #{frame.id}
                     </span>
+                  )}
+                  {frame.qcStatus === 'approved' && (
+                    <span className="bg-emerald-500/90 text-slate-950 font-bold text-[10px] px-1.5 py-1 rounded-lg" title="Aprovada no Auto-QC">✓ QC</span>
+                  )}
+                  {frame.qcStatus === 'fixed' && (
+                    <span className="bg-amber-500/90 text-slate-950 font-bold text-[10px] px-1.5 py-1 rounded-lg" title={`Corrigida pelo Auto-QC: ${frame.qcIssues || ''}`}>🔧 QC</span>
+                  )}
+                  {frame.qcStatus === 'flagged' && (
+                    <span className="bg-rose-500/90 text-white font-bold text-[10px] px-1.5 py-1 rounded-lg" title={`Sinalizada pelo Auto-QC: ${frame.qcIssues || ''}`}>⚠ QC</span>
                   )}
                   <span className="bg-slate-950/80 backdrop-blur-md text-slate-200 font-mono text-[11px] px-2.5 py-1 rounded-lg border border-slate-800 flex items-center gap-1">
                     <Clock className="w-3 h-3 text-amber-400" />

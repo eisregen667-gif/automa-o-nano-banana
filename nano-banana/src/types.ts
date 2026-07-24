@@ -9,10 +9,19 @@ export interface ScriptEntity {
   reference_image_recommended?: boolean;
 }
 
+export interface ColorScriptAct {
+  act_label: string;
+  block_start: number;
+  block_end: number;
+  palette: string;
+  lighting_mood: string;
+}
+
 export interface EntityRegistry {
   detected_niche: string;
   detected_era?: string;
   entities: ScriptEntity[];
+  color_script?: ColorScriptAct[];
 }
 
 export interface EntityReferenceSheet {
@@ -70,6 +79,9 @@ export interface GeneratedFrame {
   originalPrompt: string;
   videoPrompt?: string;     // Image-to-video motion prompt (Pass 3)
   isTitleCard?: boolean;    // Cartela de documentário (texto na imagem, inserida na sequência)
+  isBroll?: boolean;        // Cutaway de B-roll inserido na sequência
+  qcStatus?: 'approved' | 'fixed' | 'flagged'; // Resultado do Auto-QC visual
+  qcIssues?: string;        // Problemas apontados pelo Auto-QC
   cameraShot?: string;      // e.g. "Close-up", "Wide shot", "Drone shot"
   mood?: string;            // e.g. "Dramatic", "Melancholic"
   sceneId?: string;         // e.g. "SCENE_01"

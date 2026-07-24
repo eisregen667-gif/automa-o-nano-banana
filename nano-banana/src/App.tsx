@@ -17,8 +17,11 @@ import {
   generateEntityReference,
   generateImage,
   generateVideoPrompts,
-  generateTitleCards
+  generateTitleCards,
+  generateBrollPlans,
+  inspectImageQuality
 } from './services/geminiClient';
+import { AnimaticPlayer } from './components/AnimaticPlayer';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
 import { ActivityLog } from './components/ActivityLog';
 import { SAMPLE_SRT_PRESETS } from './data/sampleSrt';
@@ -65,6 +68,9 @@ export default function App() {
   const [isGeneratingPrompts, setIsGeneratingPrompts] = useState<boolean>(false);
   const [isGeneratingVideoPrompts, setIsGeneratingVideoPrompts] = useState<boolean>(false);
   const [isGeneratingTitleCards, setIsGeneratingTitleCards] = useState<boolean>(false);
+  const [isGeneratingBroll, setIsGeneratingBroll] = useState<boolean>(false);
+  const [qcState, setQcState] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
+  const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
 
   const [queueState, setQueueState] = useState<QueueProgressState>({
     total: 0,
@@ -478,7 +484,7 @@ export default function App() {
 
   // PASSADA DE CARTELAS: plan and insert documentary title cards into the sequence
   const handleGenerateTitleCards = async () => {
-    const sceneFrames = framesRef.current.filter((f) => !f.isTitleCard);
+    const sceneFrames = framesRef.current.filter((f) => !f.isTitleCard && !f.isBroll);
     if (sceneFrames.length === 0 || isGeneratingTitleCards) return;
 
     setIsGeneratingTitleCards(true);
@@ -546,6 +552,167 @@ export default function App() {
     }
   };
 
+  // PASSADA DE B-ROLL: plan and insert detail cutaways into the sequence
+  const handleGenerateBroll = async () => {
+    const sceneFrames = framesRef.current.filter((f) => !f.isTitleCard && !f.isBroll);
+    if (sceneFrames.length === 0 || isGeneratingBroll) return;
+
+    setIsGeneratingBroll(true);
+    try {
+      const plans = await generateBrollPlans(
+        sceneFrames.map((f) => ({
+          id: f.id,
+          timeStart: f.timeStart,
+          timeEnd: f.timeEnd,
+          subtitleText: f.subtitleText
+        })),
+        entityRegistry,
+        stylecard.textStyle,
+        config.customApiKey
+      );
+
+      if (plans.length === 0) {
+        logWarn('Nenhum B-roll foi planejado para este roteiro.');
+        return;
+      }
+
+      const usedIds = new Set(framesRef.current.map((f) => f.id));
+      const brollFrames: GeneratedFrame[] = plans.map((plan) => {
+        let brollId = plan.insertAfterFrameId + 0.25;
+        while (usedIds.has(brollId)) brollId += 0.01;
+        usedIds.add(brollId);
+
+        const anchor = sceneFrames.find((f) => f.id === plan.insertAfterFrameId);
+        const timecode = anchor ? anchor.timeEnd : (sceneFrames[0]?.timeStart || '00:00:00,000');
+
+        return {
+          id: brollId,
+          timeStart: timecode,
+          timeEnd: timecode,
+          subtitleText: `B-ROLL: ${plan.label}`,
+          visualPrompt: plan.imagePrompt,
+          originalPrompt: plan.imagePrompt,
+          videoPrompt: plan.videoPrompt,
+          cameraShot: 'B-Roll Detail',
+          mood: 'Cutaway',
+          status: 'pending' as const,
+          isBroll: true
+        };
+      });
+
+      setFrames((prev) => {
+        const next = [...prev.filter((f) => !f.isBroll), ...brollFrames].sort((a, b) => a.id - b.id);
+        setDbItem('frames', next);
+        setQueueState((q) => ({
+          ...q,
+          total: next.length,
+          completed: next.filter((f) => f.status === 'completed').length,
+          failed: next.filter((f) => f.status === 'failed').length
+        }));
+        return next;
+      });
+
+      logSuccess(`${brollFrames.length} B-roll(s) inserido(s) na sequência. Gere as imagens pela fila para renderizá-los.`);
+    } catch (err: any) {
+      console.error('Failed to generate B-roll:', err);
+      logError(`Falha ao gerar B-roll: ${err?.message || err}`);
+    } finally {
+      setIsGeneratingBroll(false);
+    }
+  };
+
+  // AUTO-QC: inspect every completed image with Gemini vision and auto-fix defects
+  const handleAutoQC = async () => {
+    const targets = framesRef.current.filter((f) => f.status === 'completed' && f.imageUrl?.startsWith('data:image'));
+    if (targets.length === 0 || qcState.running) return;
+    if (!config.customApiKey?.trim()) {
+      logWarn('Auto-QC requer a chave API do Gemini (Configurações).');
+      return;
+    }
+
+    setQcState({ running: true, done: 0, total: targets.length });
+    logInfo(`Auto-QC iniciado: inspecionando ${targets.length} imagens com visão do Gemini...`);
+
+    let approvedCount = 0;
+    let fixedCount = 0;
+    let flaggedCount = 0;
+
+    const applyQc = (id: number, qcStatus: GeneratedFrame['qcStatus'], qcIssues?: string, newImageUrl?: string) => {
+      setFrames((prev) => {
+        const next = prev.map((f) =>
+          f.id === id ? { ...f, qcStatus, qcIssues, ...(newImageUrl ? { imageUrl: newImageUrl } : {}) } : f
+        );
+        setDbItem('frames', next).catch(() => {});
+        return next;
+      });
+    };
+
+    for (const frame of targets) {
+      try {
+        const blockId = Number(frame.id);
+        const expectedEntities = (entityRegistry?.entities || [])
+          .filter((e) => e.appears_in_blocks?.includes(blockId) || e.implicit_blocks?.includes(blockId))
+          .map((e) => e.canonical_description);
+        const expectedText = frame.isTitleCard ? frame.subtitleText.replace(/^CARTELA:\s*/, '') : undefined;
+
+        const qc = await inspectImageQuality({
+          imageUrl: frame.imageUrl!,
+          visualPrompt: frame.visualPrompt,
+          era: entityRegistry?.detected_era,
+          expectedEntities,
+          expectedText,
+          apiKey: config.customApiKey
+        });
+
+        if (!qc) {
+          // inspeção indisponível para este frame; segue adiante
+        } else if (qc.approved) {
+          approvedCount++;
+          applyQc(frame.id, 'approved');
+        } else {
+          const issuesText = qc.issues.join('; ');
+          logWarn(`Auto-QC frame #${frame.id}: ${issuesText}. Regenerando com correção...`);
+
+          const relevantRefImages: string[] = [];
+          for (const entity of entityRegistry?.entities || []) {
+            if (entity.appears_in_blocks?.includes(blockId) || entity.implicit_blocks?.includes(blockId)) {
+              const refImg = entityReferenceSheets[entity.id];
+              if (refImg) relevantRefImages.push(refImg);
+            }
+          }
+
+          const res = await generateImage({
+            prompt: `${frame.visualPrompt}. MANDATORY CORRECTION: ${qc.fixInstruction}`,
+            subtitleText: frame.subtitleText,
+            timecode: frame.timeStart,
+            styleText: stylecard.textStyle,
+            aspectRatio: stylecard.aspectRatio,
+            referenceImageBase64: stylecard.referenceImageBase64,
+            referenceImages: relevantRefImages,
+            model: relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
+            apiKey: config.customApiKey
+          });
+
+          if (res.success && res.imageUrl && !res.isFallback) {
+            fixedCount++;
+            applyQc(frame.id, 'fixed', issuesText, res.imageUrl);
+            logSuccess(`Auto-QC frame #${frame.id}: imagem corrigida e substituída.`);
+          } else {
+            flaggedCount++;
+            applyQc(frame.id, 'flagged', issuesText);
+            logError(`Auto-QC frame #${frame.id}: não foi possível corrigir automaticamente — revise manualmente.`);
+          }
+        }
+      } catch (err: any) {
+        console.warn(`Auto-QC error on frame ${frame.id}:`, err);
+      }
+      setQcState((s) => ({ ...s, done: s.done + 1 }));
+    }
+
+    logSuccess(`Auto-QC concluído: ${approvedCount} aprovadas, ${fixedCount} corrigidas automaticamente, ${flaggedCount} sinalizadas para revisão.`);
+    setQcState((s) => ({ ...s, running: false }));
+  };
+
   // PASSADA 3: Generate image-to-video motion prompts for all frames
   const handleGenerateVideoPrompts = async () => {
     const currentFrames = framesRef.current;
@@ -553,8 +720,8 @@ export default function App() {
 
     setIsGeneratingVideoPrompts(true);
     try {
-      // Cartelas keep their own static-text video prompt from the title card pass
-      const items = currentFrames.filter((f) => !f.isTitleCard).map((f) => ({
+      // Cartelas e B-rolls keep their own video prompts from their planning passes
+      const items = currentFrames.filter((f) => !f.isTitleCard && !f.isBroll).map((f) => ({
         id: f.id,
         visualPrompt: f.visualPrompt,
         subtitleText: f.subtitleText,
@@ -713,27 +880,61 @@ export default function App() {
                 <button
                   onClick={handleGenerateTitleCards}
                   disabled={isGeneratingTitleCards}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
                     isGeneratingTitleCards
                       ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
                       : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/40 cursor-pointer'
                   }`}
                   title="Detecta mudanças de local/tempo e insere cartelas profissionais (title cards) na sequência, com design coerente ao Stylecard"
                 >
-                  📋 {isGeneratingTitleCards ? 'Planejando Cartelas...' : 'Gerar Cartelas (Title Cards)'}
+                  📋 {isGeneratingTitleCards ? 'Planejando...' : 'Cartelas'}
+                </button>
+
+                <button
+                  onClick={handleGenerateBroll}
+                  disabled={isGeneratingBroll}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                    isGeneratingBroll
+                      ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
+                      : 'bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border-teal-500/40 cursor-pointer'
+                  }`}
+                  title="Planeja cutaways de detalhe (máx. 1 por cena) e insere na sequência, coerentes com entidades, era e paleta"
+                >
+                  🎞 {isGeneratingBroll ? 'Planejando...' : 'B-Roll'}
                 </button>
 
                 <button
                   onClick={handleGenerateVideoPrompts}
                   disabled={isGeneratingVideoPrompts}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
                     isGeneratingVideoPrompts
                       ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
                       : 'bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border-violet-500/40 cursor-pointer'
                   }`}
                   title="Gera um prompt de movimento (image-to-video) para cada frame, com base na duração do bloco SRT"
                 >
-                  🎬 {isGeneratingVideoPrompts ? 'Gerando Prompts de Vídeo...' : 'Gerar Prompts de Vídeo (Image-to-Video)'}
+                  🎬 {isGeneratingVideoPrompts ? 'Gerando...' : 'Prompts de Vídeo'}
+                </button>
+
+                <button
+                  onClick={handleAutoQC}
+                  disabled={qcState.running}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
+                    qcState.running
+                      ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
+                      : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/40 cursor-pointer'
+                  }`}
+                  title="Inspeciona cada imagem gerada com visão do Gemini (anatomia, texto, anacronismos, consistência) e corrige defeitos automaticamente"
+                >
+                  🔍 {qcState.running ? `Inspecionando ${qcState.done}/${qcState.total}...` : 'Auto-QC'}
+                </button>
+
+                <button
+                  onClick={() => setShowAnimatic(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer"
+                  title="Assiste os frames em sequência com a duração real do SRT — o documentário em storyboard, antes de gerar os vídeos"
+                >
+                  ▶ Preview
                 </button>
               </div>
             </div>
@@ -794,6 +995,13 @@ export default function App() {
           isProcessingPrompts={isGeneratingPrompts}
         />
       )}
+
+      {/* Preview Animatic */}
+      <AnimaticPlayer
+        isOpen={showAnimatic}
+        onClose={() => setShowAnimatic(false)}
+        frames={frames}
+      />
 
       {/* Painel flutuante de Log de Atividades */}
       <ActivityLog />

@@ -97,10 +97,29 @@ UNIVERSAL ENTITY EXTRACTION ENGINE (DOMAIN-AGNOSTIC):
      gathering AROUND a registered sacred object; blocks about a
      journey happening ABOARD a registered ship).
 
+5-C. COLOR SCRIPT (CINEMATIC PALETTE ARC):
+   - Divide the narrative into 2 to 5 ACTS following the emotional arc
+     of the script (setup, development, climax, resolution).
+   - Assign each act a film-grade PALETTE (dominant colors + one accent)
+     and a LIGHTING MOOD that evolve across the documentary (e.g., cool
+     desaturated blues in the mysterious opening → warm golden amber at
+     the emotional climax → soft balanced tones in the resolution).
+   - Palettes must be coherent with the detected niche and era, and must
+     never contradict the project stylecard.
+
 6. OUTPUT SCHEMA (STRICT JSON ONLY — no commentary, no markdown fences):
 {
   "detected_niche": "...",
   "detected_era": "...",
+  "color_script": [
+    {
+      "act_label": "...",
+      "block_start": 1,
+      "block_end": 40,
+      "palette": "dominant colors + accent color",
+      "lighting_mood": "..."
+    }
+  ],
   "entities": [
     {
       "id": "CHAR_01 | OBJ_01 | LOC_01 | CREAT_01 | TECH_01 (+ _v2 for states)",
@@ -193,6 +212,38 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
      share the same environment, lighting and entity states, varying
      ONLY camera framing and action beat.
 
+6-B. PROFESSIONAL SHOT GRAMMAR — DECUPAGEM (MANDATORY):
+   - Edit like a real documentary DP covers a scene:
+     * The FIRST block of every new scene is a WIDE ESTABLISHING shot
+       of the location.
+     * Following blocks alternate MEDIUM shots, CLOSE-UPS and DETAIL
+       inserts — NEVER the same framing type in two consecutive blocks.
+     * Roughly every 3-4 blocks include one DETAIL close-up (hands,
+       object, texture, environmental element) that breathes life into
+       the scene.
+     * Vary camera angle and height across consecutive blocks
+       (eye-level, low-angle, elevated) so back-to-back cuts feel like
+       professional coverage, never a repetitive slideshow.
+
+6-C. COLOR SCRIPT LOCK:
+   - If the ENTITY REGISTRY includes "color_script", find the act whose
+     block range contains the current block and EXPLICITLY state that
+     act's palette and lighting_mood in the prompt. All blocks of the
+     same act share a consistent, film-graded color identity; the
+     palette evolves across acts exactly as scripted.
+
+6-D. ARCHIVAL SIMULATION ENGINE (USE SPARINGLY — MAX ~15% OF BLOCKS):
+   - When a block narrates past events, documented records, memories or
+     retrospective facts — and ONLY when it strengthens the storytelling
+     — render it as SIMULATED ARCHIVAL MATERIAL appropriate to the
+     niche and era: grainy black-and-white photograph, sepia
+     photographic plate, aged film still with scratches and vignetting,
+     vintage newspaper photo, CRT screen capture, faded polaroid.
+   - State the archival medium explicitly in the prompt and set
+     cameraShot to "Archival". Entity consistency locks still apply.
+   - Never use archival treatment on two consecutive blocks, on the
+     opening block, or in a way that conflicts with the color script.
+
 7. DEPTH LAYERING ENGINE (MANDATORY — REAL SENSE OF DEPTH):
    - Every prompt MUST explicitly define three depth planes:
      * FOREGROUND: a near element partially framing the shot
@@ -284,6 +335,66 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
 11. OUTPUT:
     - Strictly single-line natural language prompt strings in English
       inside the required JSON schema, one per SRT block, exact count N.`;
+
+export const PROMPT_BROLL_DIRECTOR = `You are a world-class Documentary Editor planning B-ROLL cutaways — the
+detail shots real documentaries intercut with the main narrative (hands
+working, object close-ups, environmental textures, symbolic inserts).
+You receive the subtitle timeline (frames with id, timecodes and text),
+the CANONICAL ENTITY REGISTRY and the project Stylecard.
+Plan the B-roll set for this documentary.
+
+RULES:
+1. EDITORIAL DISCIPLINE: at most ONE b-roll per scene, and ONLY where a
+   cutaway genuinely adds value (an object just mentioned, a texture of
+   the location, a symbolic detail). Total b-rolls must not exceed ~20%
+   of the number of scenes. Quality over quantity — zero is acceptable.
+2. imagePrompt (ENGLISH, single line): a DETAIL or MACRO shot coherent
+   with the surrounding scene — same location, era, lighting, palette
+   and stylecard. When the detail belongs to a registered entity, reuse
+   its canonical_description traits VERBATIM (same materials, colors,
+   wear). Shallow depth of field, intimate framing, no faces as the
+   main subject, and the standard negative lock (no text, no watermark,
+   no anachronisms).
+3. videoPrompt (ENGLISH, single line): subtle macro-scale ambient
+   motion only — fabric stirring, water dripping, dust in a light beam,
+   flame flicker — with a locked or barely drifting camera, single
+   continuous shot.
+4. label: a short human-readable name in the SCRIPT'S LANGUAGE
+   (e.g., "Mãos puxando a rede", "Textura da pedra da basílica").
+5. OUTPUT: strict JSON array only. Each item:
+   { "insertAfterFrameId": <id of the frame the b-roll appears AFTER>,
+     "label": "...", "imagePrompt": "...", "videoPrompt": "..." }`;
+
+export const PROMPT_IMAGE_QC = `You are a meticulous Documentary Image Quality Control inspector.
+You receive ONE generated image plus its context: the prompt that
+generated it, the detected era, the canonical descriptions of entities
+expected in the shot, and (for title cards) the EXACT text that must
+appear.
+Inspect the image strictly and report:
+
+CHECKLIST:
+1. ANATOMY: malformed hands, extra/missing fingers or limbs, warped
+   faces, broken body proportions.
+2. TEXT: any garbled, misspelled or unwanted text. For title cards, the
+   rendered text must match the expected text EXACTLY and be perfectly
+   legible; any deviation fails.
+3. ANACHRONISMS: objects, clothing, materials or technology impossible
+   for the stated era (wristwatches, t-shirts, modern boats, plastic...).
+4. ENTITY CONSISTENCY: subjects must match the provided canonical
+   descriptions (clothing, colors, age, build, distinctive marks).
+5. ARTIFACTS: duplicated subjects, floating objects, impossible
+   perspective, melted geometry, watermark remnants.
+
+VERDICT RULES:
+- Approve when no CLEARLY VISIBLE problem exists — do not nitpick
+  stylistic choices, mild softness or artistic interpretation.
+- Fail ONLY for objective, visible defects from the checklist.
+- fix_instruction: ONE short English sentence to append to the
+  regeneration prompt that would fix the worst defects (e.g., "ensure
+  both hands have five fingers and remove the modern wristwatch").
+
+OUTPUT: strict JSON only:
+{ "approved": true/false, "issues": ["..."], "fix_instruction": "..." }`;
 
 export const PROMPT_TITLE_CARD_DIRECTOR = `You are a world-class Documentary Editor and Motion Graphics Designer
 responsible for TITLE CARDS (cartelas) — the on-screen text moments that
@@ -403,6 +514,16 @@ RULES:
 
 5. SINGLE CONTINUOUS SHOT: no cuts, no transitions, no scene changes,
    no zoom bursts, no camera shake unless the scene clearly demands it.
+
+5-B. CAMERA VARIETY ACROSS THE SEQUENCE (MANDATORY):
+   - NEVER give two consecutive frames the same camera move. Alternate
+     type and direction across the batch (push-in → lateral dolly →
+     static parallax → pull-back → gentle pan...), like real
+     documentary editing rhythm.
+   - For frames whose image is simulated ARCHIVAL material (old photo,
+     aged film still), use classic documentary rostrum treatment:
+     a slow Ken Burns-style zoom or pan across the still, with subtle
+     film grain flicker — nothing else moves inside the photo.
 
 6. STYLE PRESERVATION: cinematic, stable, temporally coherent motion that
    preserves the original art style, mood and lighting of the image.
