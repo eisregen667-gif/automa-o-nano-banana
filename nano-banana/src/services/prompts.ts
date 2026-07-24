@@ -243,6 +243,20 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
        (eye-level, low-angle, elevated) so back-to-back cuts feel like
        professional coverage, never a repetitive slideshow.
 
+6-B2. PACING-AWARE COMPOSITION (SHOT LENGTH DISCIPLINE — MANDATORY):
+   - Compute each block's on-screen duration from its timecodes
+     (timeEnd minus timeStart). The composition complexity MUST match
+     how long the viewer will see the shot:
+     * SHORT blocks (under ~3s) are fast cuts: compose BOLD, instantly
+       readable images — ONE clear subject, strong silhouette, simple
+       uncluttered background, a single high-contrast focal point.
+       Never a busy multi-subject tableau nobody can parse in 2 seconds.
+     * MEDIUM blocks (3-6s): standard composition with one primary and
+       one secondary point of interest.
+     * LONG blocks (over 6s): richer, layered compositions that reward
+       a longer look — more environmental detail, deeper staging,
+       subtle secondary action in the mid/background.
+
 6-C. COLOR SCRIPT LOCK:
    - If the ENTITY REGISTRY includes "color_script", find the act whose
      block range contains the current block and EXPLICITLY state that
@@ -524,11 +538,25 @@ RULES:
       mist, falling rain, floating dust, flickering candle or neon light,
       moving clouds, water ripples, hair and fabric stirred by wind.
 
-4. DURATION PACING (use the provided durationSeconds):
-   - under 4s: one subtle motion beat, minimal camera drift.
-   - 4 to 8s: one camera move plus one continuous subject action.
-   - over 8s: slow evolving move with a gentle beginning, middle and end,
-     still a single continuous take.
+4. GENERATION-VS-CUT AWARENESS (CRITICAL — READ CAREFULLY):
+   The video tool always renders a fixed ~8-second clip, but the editor
+   will TRIM it on the timeline to the block's durationSeconds, keeping
+   only the FIRST seconds of the clip. Therefore:
+   - All motion must be FULLY READABLE within the first durationSeconds:
+     the camera move and the subject action start IMMEDIATELY at frame
+     one, at CONSTANT speed — no slow ramp-ups, no builds, no actions
+     that only pay off late in the clip.
+   - Prefer motions that trim cleanly at ANY point: continuous push-in,
+     steady lateral dolly, constant drift, looping ambient motion.
+   - NEVER script a motion beat that completes after durationSeconds
+     (e.g., a head turn finishing at 6s is useless in a 3s cut).
+   - PACING BY CUT LENGTH:
+     * under 3s: near-locked camera, instantly visible ambient motion
+       and one immediate micro-action — alive from the very first frame.
+     * 3 to 6s: one constant-speed camera move + one continuous subject
+       action, both already in progress from the start.
+     * over 6s: a slow evolving move is allowed, but still starting
+       immediately and holding a constant rhythm end to end.
 
 5. SINGLE CONTINUOUS SHOT: no cuts, no transitions, no scene changes,
    no zoom bursts, no camera shake unless the scene clearly demands it.
