@@ -9,8 +9,6 @@ interface SrtInputSectionProps {
   rawSrtText: string;
   onUpdateSrt: (rawText: string, blocks: SrtBlock[]) => void;
   onApplyPresetStyle: (styleText: string) => void;
-  onGeneratePrompts: () => void;
-  isGeneratingPrompts: boolean;
 }
 
 export const SrtInputSection: React.FC<SrtInputSectionProps> = ({
@@ -18,8 +16,6 @@ export const SrtInputSection: React.FC<SrtInputSectionProps> = ({
   rawSrtText,
   onUpdateSrt,
   onApplyPresetStyle,
-  onGeneratePrompts,
-  isGeneratingPrompts,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'preview' | 'presets'>('upload');
@@ -210,24 +206,9 @@ export const SrtInputSection: React.FC<SrtInputSectionProps> = ({
         </div>
       )}
 
-      {/* Trigger Prompts Generation with Gemini */}
-      <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="text-xs text-slate-400">
-          Status: <strong className="text-slate-200">{srtBlocks.length}</strong> cenas preparadas para geração por IA.
-        </div>
-
-        <button
-          onClick={onGeneratePrompts}
-          disabled={srtBlocks.length === 0 || isGeneratingPrompts}
-          className={`w-full sm:w-auto px-5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg ${
-            srtBlocks.length > 0 && !isGeneratingPrompts
-              ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 shadow-amber-500/20 cursor-pointer'
-              : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-800'
-          }`}
-        >
-          <Sparkles className={`w-4 h-4 ${isGeneratingPrompts ? 'animate-spin' : ''}`} />
-          {isGeneratingPrompts ? 'Gemini Analisando Roteiro...' : '1. Gerar Prompts Visuais com Gemini'}
-        </button>
+      {/* Status */}
+      <div className="pt-3 border-t border-slate-800 text-xs text-slate-400">
+        Status: <strong className="text-slate-200">{srtBlocks.length}</strong> cenas preparadas — use o <strong className="text-amber-400">Fluxo de Produção</strong> abaixo para gerar.
       </div>
     </div>
   );

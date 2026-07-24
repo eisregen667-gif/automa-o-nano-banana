@@ -22,6 +22,7 @@ import {
   inspectImageQuality
 } from './services/geminiClient';
 import { AnimaticPlayer } from './components/AnimaticPlayer';
+import { WorkflowBar } from './components/WorkflowBar';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
 import { ActivityLog } from './components/ActivityLog';
 import { SAMPLE_SRT_PRESETS } from './data/sampleSrt';
@@ -803,39 +804,8 @@ export default function App() {
     }
   };
 
-  const handleClearData = async () => {
-    if (confirm('Tem certeza que deseja limpar TODOS os dados e começar de novo?')) {
-      // Clear IndexedDB items
-      await clearDb();
-      logWarn('Todos os dados do projeto foram limpos.');
-
-      // Clear local state
-      setRawSrtText('');
-      setSrtBlocks([]);
-      setEntityRegistry(null);
-      setEntityReferenceSheets({});
-      setFrames([]);
-      setQueueState({
-        total: 0,
-        completed: 0,
-        failed: 0,
-        inProgress: false,
-        isPaused: false,
-        concurrency: 4
-      });
-      isProcessingRef.current = false;
-      isPausedRef.current = false;
-      
-      // Ensure stylecard resets
-      setStylecard({
-        textStyle: '',
-        aspectRatio: '16:9'
-      });
-    }
-  };
-
   const handleHardReset = async () => {
-    if (confirm('Atenção: Isso forçará a limpeza de todo o banco de dados e recarregará a página. Continuar?')) {
+    if (confirm('Atenção: Isso limpará TODOS os dados do projeto e recarregará a página. Continuar?')) {
       await clearDb();
       window.location.reload();
     }
@@ -851,7 +821,6 @@ export default function App() {
         onOpenExport={() => setActiveModal('export')}
         onOpenPromptMatrix={() => setActiveModal('promptMatrix')}
         onOpenEntities={() => setActiveModal('entityReview')}
-        onClearData={handleClearData}
         onHardReset={handleHardReset}
         hasPrompts={frames.length > 0}
         hasEntities={!!entityRegistry && entityRegistry.entities.length > 0}
@@ -867,8 +836,6 @@ export default function App() {
               setSrtBlocks(blocks);
             }}
             onApplyPresetStyle={(styleText) => setStylecard((prev) => ({ ...prev, textStyle: styleText }))}
-            onGeneratePrompts={handleGeneratePrompts}
-            isGeneratingPrompts={isAnalyzingEntities || isGeneratingPrompts}
           />
 
           <StylecardSection
@@ -876,6 +843,31 @@ export default function App() {
             onChangeStylecard={setStylecard}
           />
         </div>
+
+        <WorkflowBar
+          hasScript={srtBlocks.length > 0}
+          totalBlocks={srtBlocks.length}
+          hasPrompts={frames.length > 0}
+          isAnalyzing={isAnalyzingEntities || isGeneratingPrompts}
+          onGeneratePrompts={handleGeneratePrompts}
+          totalFrames={queueState.total}
+          completedFrames={queueState.completed}
+          queueInProgress={queueState.inProgress}
+          onStartQueue={startQueueProcessing}
+          qcRunning={qcState.running}
+          qcDone={qcState.done}
+          qcTotal={qcState.total}
+          onAutoQC={handleAutoQC}
+          cardsBusy={isGeneratingTitleCards}
+          onTitleCards={handleGenerateTitleCards}
+          brollBusy={isGeneratingBroll}
+          onBroll={handleGenerateBroll}
+          videoBusy={isGeneratingVideoPrompts}
+          hasVideoPrompts={frames.some((f) => !!f.videoPrompt)}
+          onVideoPrompts={handleGenerateVideoPrompts}
+          onPreview={() => setShowAnimatic(true)}
+          onExport={() => setActiveModal('export')}
+        />
 
         {queueState.total > 0 && (
           <QueueProgress
@@ -902,86 +894,25 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={handleGenerateTitleCards}
-                  disabled={isGeneratingTitleCards}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
-                    isGeneratingTitleCards
-                      ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
-                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/40 cursor-pointer'
-                  }`}
-                  title="Detecta mudanças de local/tempo e insere cartelas profissionais (title cards) na sequência, com design coerente ao Stylecard"
-                >
-                  📋 {isGeneratingTitleCards ? 'Planejando...' : 'Cartelas'}
-                </button>
-
-                <button
-                  onClick={handleGenerateBroll}
-                  disabled={isGeneratingBroll}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
-                    isGeneratingBroll
-                      ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
-                      : 'bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border-teal-500/40 cursor-pointer'
-                  }`}
-                  title="Planeja cutaways de detalhe (máx. 1 por cena) e insere na sequência, coerentes com entidades, era e paleta"
-                >
-                  🎞 {isGeneratingBroll ? 'Planejando...' : 'B-Roll'}
-                </button>
-
-                <button
-                  onClick={handleGenerateVideoPrompts}
-                  disabled={isGeneratingVideoPrompts}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
-                    isGeneratingVideoPrompts
-                      ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-wait'
-                      : 'bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border-violet-500/40 cursor-pointer'
-                  }`}
-                  title="Gera um prompt de movimento (image-to-video) para cada frame, com base na duração do bloco SRT"
-                >
-                  🎬 {isGeneratingVideoPrompts ? 'Gerando...' : 'Prompts de Vídeo'}
-                </button>
-
-                <button
-                  onClick={handleAutoQC}
-                  disabled={qcState.running}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border ${
-                    qcState.running
-                      ? 'bg-slate-800 text-slate-400 border-slate-700 cursor-wait'
-                      : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/40 cursor-pointer'
-                  }`}
-                  title="Inspeciona cada imagem gerada com visão do Gemini (anatomia, texto, anacronismos, consistência) e corrige defeitos automaticamente"
-                >
-                  🔍 {qcState.running ? `${qcState.paused ? 'Pausado' : 'Inspecionando'} ${qcState.done}/${qcState.total}` : 'Auto-QC'}
-                </button>
-
-                {qcState.running && (
-                  <>
-                    <button
-                      onClick={qcState.paused ? handleResumeQC : handlePauseQC}
-                      className="px-3 py-2 rounded-xl text-xs font-bold border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 transition-all cursor-pointer"
-                      title={qcState.paused ? 'Retomar Auto-QC' : 'Pausar Auto-QC'}
-                    >
-                      {qcState.paused ? '▶ Retomar' : '⏸ Pausar'}
-                    </button>
-                    <button
-                      onClick={handleStopQC}
-                      className="px-3 py-2 rounded-xl text-xs font-bold border bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border-rose-800 transition-all cursor-pointer"
-                      title="Interromper o Auto-QC"
-                    >
-                      ⏹ Parar
-                    </button>
-                  </>
-                )}
-
-                <button
-                  onClick={() => setShowAnimatic(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer"
-                  title="Assiste os frames em sequência com a duração real do SRT — o documentário em storyboard, antes de gerar os vídeos"
-                >
-                  ▶ Preview
-                </button>
-              </div>
+              {qcState.running && (
+                <div className="flex items-center gap-2 bg-slate-900 border border-emerald-500/30 rounded-xl px-3 py-2">
+                  <span className="text-xs font-bold text-emerald-300">
+                    🔍 Auto-QC: {qcState.paused ? 'pausado' : 'inspecionando'} {qcState.done}/{qcState.total}
+                  </span>
+                  <button
+                    onClick={qcState.paused ? handleResumeQC : handlePauseQC}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 transition-all cursor-pointer"
+                  >
+                    {qcState.paused ? '▶ Retomar' : '⏸ Pausar'}
+                  </button>
+                  <button
+                    onClick={handleStopQC}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border-rose-800 transition-all cursor-pointer"
+                  >
+                    ⏹ Parar
+                  </button>
+                </div>
+              )}
             </div>
 
             <GalleryGrid
