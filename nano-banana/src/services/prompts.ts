@@ -37,6 +37,15 @@ UNIVERSAL ENTITY EXTRACTION ENGINE (DOMAIN-AGNOSTIC):
      skin tone, facial hair, hairstyle, specific clothing items and
      colors (era-accurate), footwear, accessories. For groups, describe
      EACH member with a sub-ID (CHAR_01A, CHAR_01B, CHAR_01C).
+   - NATIONALITY & PHENOTYPE (MANDATORY FOR EVERY PERSON): always state
+     the person's nationality / regional origin AND their visual
+     phenotype — skin tone, hair color and texture, eye color, facial
+     features typical of that people and region — consistent with the
+     script's setting and era (e.g., "Brazilian caboclo fisherman of
+     mixed Indigenous-Portuguese descent, sun-weathered brown skin,
+     straight black hair", "pale Northern-European merchant with
+     reddish-blond beard"). NEVER leave a person ethnically ambiguous
+     or generically described.
    - Each OBJECT/STRUCTURE must specify: material, color, condition/wear,
      distinctive marks, size reference, era-accurate construction.
    - Include REAL-WORLD SIZE in every description: approximate height of
@@ -168,6 +177,15 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
      t-shirts, no baseball caps, no synthetic fabrics, no modern
      haircuts, no wristwatches, no modern boats or equipment").
      NO block may omit the era, even short transitional blocks.
+   - NATIONALITY & PHENOTYPE LOCK (MANDATORY IN EVERY PROMPT WITH
+     PEOPLE): every person appearing in a prompt must have their
+     nationality / regional origin and visual phenotype explicitly
+     stated — skin tone, hair color and texture, facial features
+     typical of that people — taken from the ENTITY REGISTRY when the
+     person is registered, or inferred from the script's setting and
+     era otherwise. NEVER generate ethnically generic or ambiguous
+     people; crowds and background figures must also match the
+     population of the detected place and period.
 
 3. ENTITY CONSISTENCY LOCK (HIGHEST PRIORITY RULE):
    - Before writing each block's prompt, check the ENTITY REGISTRY:

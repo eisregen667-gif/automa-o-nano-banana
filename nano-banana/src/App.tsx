@@ -69,7 +69,8 @@ export default function App() {
   const [isGeneratingVideoPrompts, setIsGeneratingVideoPrompts] = useState<boolean>(false);
   const [isGeneratingTitleCards, setIsGeneratingTitleCards] = useState<boolean>(false);
   const [isGeneratingBroll, setIsGeneratingBroll] = useState<boolean>(false);
-  const [qcState, setQcState] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
+  const [qcState, setQcState] = useState<{ running: boolean; paused: boolean; done: number; total: number }>({ running: false, paused: false, done: 0, total: 0 });
+  const qcControlRef = useRef<{ paused: boolean; stopped: boolean }>({ paused: false, stopped: false });
   const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
 
   const [queueState, setQueueState] = useState<QueueProgressState>({
@@ -630,7 +631,8 @@ export default function App() {
       return;
     }
 
-    setQcState({ running: true, done: 0, total: targets.length });
+    qcControlRef.current = { paused: false, stopped: false };
+    setQcState({ running: true, paused: false, done: 0, total: targets.length });
     logInfo(`Auto-QC iniciado: inspecionando ${targets.length} imagens com visão do Gemini...`);
 
     let approvedCount = 0;
@@ -648,6 +650,13 @@ export default function App() {
     };
 
     for (const frame of targets) {
+      while (qcControlRef.current.paused && !qcControlRef.current.stopped) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      if (qcControlRef.current.stopped) {
+        logWarn('Auto-QC interrompido pelo usuário.');
+        break;
+      }
       try {
         const blockId = Number(frame.id);
         const expectedEntities = (entityRegistry?.entities || [])
@@ -709,8 +718,25 @@ export default function App() {
       setQcState((s) => ({ ...s, done: s.done + 1 }));
     }
 
-    logSuccess(`Auto-QC concluído: ${approvedCount} aprovadas, ${fixedCount} corrigidas automaticamente, ${flaggedCount} sinalizadas para revisão.`);
-    setQcState((s) => ({ ...s, running: false }));
+    logSuccess(`Auto-QC ${qcControlRef.current.stopped ? 'interrompido' : 'concluído'}: ${approvedCount} aprovadas, ${fixedCount} corrigidas automaticamente, ${flaggedCount} sinalizadas para revisão.`);
+    setQcState((s) => ({ ...s, running: false, paused: false }));
+  };
+
+  const handlePauseQC = () => {
+    qcControlRef.current.paused = true;
+    setQcState((s) => ({ ...s, paused: true }));
+    logWarn('Auto-QC pausado.');
+  };
+
+  const handleResumeQC = () => {
+    qcControlRef.current.paused = false;
+    setQcState((s) => ({ ...s, paused: false }));
+    logInfo('Auto-QC retomado.');
+  };
+
+  const handleStopQC = () => {
+    qcControlRef.current.stopped = true;
+    qcControlRef.current.paused = false;
   };
 
   // PASSADA 3: Generate image-to-video motion prompts for all frames
@@ -926,8 +952,27 @@ export default function App() {
                   }`}
                   title="Inspeciona cada imagem gerada com visão do Gemini (anatomia, texto, anacronismos, consistência) e corrige defeitos automaticamente"
                 >
-                  🔍 {qcState.running ? `Inspecionando ${qcState.done}/${qcState.total}...` : 'Auto-QC'}
+                  🔍 {qcState.running ? `${qcState.paused ? 'Pausado' : 'Inspecionando'} ${qcState.done}/${qcState.total}` : 'Auto-QC'}
                 </button>
+
+                {qcState.running && (
+                  <>
+                    <button
+                      onClick={qcState.paused ? handleResumeQC : handlePauseQC}
+                      className="px-3 py-2 rounded-xl text-xs font-bold border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 transition-all cursor-pointer"
+                      title={qcState.paused ? 'Retomar Auto-QC' : 'Pausar Auto-QC'}
+                    >
+                      {qcState.paused ? '▶ Retomar' : '⏸ Pausar'}
+                    </button>
+                    <button
+                      onClick={handleStopQC}
+                      className="px-3 py-2 rounded-xl text-xs font-bold border bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border-rose-800 transition-all cursor-pointer"
+                      title="Interromper o Auto-QC"
+                    >
+                      ⏹ Parar
+                    </button>
+                  </>
+                )}
 
                 <button
                   onClick={() => setShowAnimatic(true)}
