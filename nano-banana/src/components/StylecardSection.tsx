@@ -9,34 +9,76 @@ interface StylecardSectionProps {
 
 const STYLE_PRESETS = [
   {
-    id: 'anime_ghibli',
-    name: 'Anime / Studio Ghibli',
-    icon: '🎨',
-    text: 'Estilo Studio Ghibli, pintura artesanal em aquarela, cores vívidas, iluminação mágica, traço limpo e detalhado de animação japonesa clássica, 8k resolution'
+    id: 'cinematic_documentary',
+    name: 'Documentário Cinematográfico',
+    icon: '📽️',
+    text: 'Cinematic documentary still, shot on ARRI Alexa 65 with 35mm prime lens, natural available light, volumetric atmosphere, shallow depth of field, true-to-life color grading with soft filmic contrast, subtle organic film grain, photorealistic skin and material textures, 8k detail'
+  },
+  {
+    id: 'photorealistic_35mm',
+    name: 'Fotografia 35mm Analógica',
+    icon: '📸',
+    text: 'Cinematic 35mm analog film photograph, shot on Kodak Portra 400, natural lighting, shallow depth of field with creamy bokeh, authentic film grain and gentle halation, muted organic color palette, hyperrealistic detail, 8k resolution'
+  },
+  {
+    id: 'period_film',
+    name: 'Drama de Época (Película)',
+    icon: '🎞️',
+    text: 'Prestige period-drama cinema still, vintage 35mm film stock look, candlelight and soft window daylight, Rembrandt lighting with rich chiaroscuro, desaturated earth-tone palette, fine film grain, painterly realism, historically accurate textures, 8k'
+  },
+  {
+    id: 'epic_anamorphic',
+    name: 'Épico Anamórfico',
+    icon: '🏛️',
+    text: 'Epic cinematic frame with anamorphic lens character, gentle horizontal flares and oval bokeh, Roger Deakins-inspired natural lighting, monumental composition with volumetric god rays, dramatic sense of scale, rich filmic color grade, hyper-detailed, 8k'
+  },
+  {
+    id: 'wildlife_nature',
+    name: 'Natureza Selvagem (BBC Earth)',
+    icon: '🦁',
+    text: 'Wildlife documentary photograph, BBC Earth cinematography, 600mm telephoto compression, golden hour backlight, crisp subject separation with creamy background, true natural colors, ultra-sharp feather and fur detail, National Geographic quality, 8k'
+  },
+  {
+    id: 'true_crime_noir',
+    name: 'True Crime / Noir Realista',
+    icon: '🕵️',
+    text: 'Moody true-crime documentary still, low-key lighting with hard shadows, sodium-vapor and cold fluorescent accents, desaturated palette with amber highlights, cinematic 50mm lens, gritty grounded realism, subtle grain, 8k'
+  },
+  {
+    id: 'scifi_realistic',
+    name: 'Sci-Fi Realista (IMAX)',
+    icon: '🚀',
+    text: 'Realistic science-fiction cinema still, practical lighting from consoles and starlight, industrial spacecraft surfaces with authentic wear, Interstellar-inspired cinematography, IMAX 70mm clarity, volumetric light, physically plausible detail, 8k'
+  },
+  {
+    id: 'vintage_archive',
+    name: 'Arquivo Vintage',
+    icon: '📼',
+    text: 'Authentic archival footage still, aged film stock with light scratches, dust and vignetting, faded period-accurate colors or monochrome, historically accurate grain structure, documentary archive realism'
   },
   {
     id: 'cyberpunk_noir',
     name: 'Cyberpunk Neon Noir',
     icon: '🌆',
-    text: 'Anime cyberpunk anos 90, estilo Akira e Ghost in the Shell, néon rosa e ciano, chovendo, atmosfera pesada de filme noir futurista, iluminação volométrica'
+    text: '90s cyberpunk anime cinema still, Akira and Ghost in the Shell style, rain-soaked neon streets in pink and cyan, heavy futuristic noir atmosphere, volumetric light shafts, detailed classic Japanese animation linework, 8k'
   },
   {
-    id: 'photorealistic_35mm',
-    name: 'Fotografia 35mm / Cinema',
-    icon: '📸',
-    text: 'Cinematic 35mm film photograph, shot on Kodak Portra 400, shallow depth of field, natural lighting, hyperrealistic, film grain, 8k resolution'
+    id: 'anime_ghibli',
+    name: 'Anime / Studio Ghibli',
+    icon: '🎨',
+    text: 'Studio Ghibli style hand-painted watercolor animation still, vivid colors, magical soft lighting, lush painterly backgrounds, clean classic Japanese animation linework, warm cozy yet epic atmosphere, 8k'
   },
   {
     id: 'dark_fantasy',
     name: 'Fantasia Sombria (Oil Painting)',
     icon: '🏰',
-    text: 'Dark fantasy oil painting style, dramatic chiaroscuro lighting, intricate details, moody dark atmosphere, golden highlights, masterpiece'
+    text: 'Dark fantasy oil painting, dramatic chiaroscuro lighting, intricate old-masters brushwork, moody atmosphere with golden highlights, epic composition, masterpiece quality'
   },
   {
     id: 'minimalist_vector',
     name: 'Ilustração Minimalista',
     icon: '✏️',
-    text: 'Clean flat vector illustration, bold lineart, harmonious pastel color palette, modern graphic design, elegant aesthetic'
+    text: 'Clean flat vector illustration, bold confident linework, harmonious modern color palette, elegant use of negative space, editorial graphic design aesthetic'
   }
 ];
 
@@ -102,7 +144,7 @@ export const StylecardSection: React.FC<StylecardSectionProps> = ({
         <label className="block text-xs font-semibold text-slate-300 mb-2">
           Presets de Estilo Rápido:
         </label>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+        <div className="flex flex-wrap items-center gap-2 pb-1">
           {STYLE_PRESETS.map((preset) => {
             const isSelected = stylecard.presetName === preset.name || stylecard.textStyle === preset.text;
             return (
