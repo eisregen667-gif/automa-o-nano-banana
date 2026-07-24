@@ -35,13 +35,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     .filter((f) => f.status === 'completed' && f.imageUrl)
     .sort((a, b) => a.id - b.id);
 
-  // Cenas = 1:1 com os blocos do SRT (o que ferramentas de timeline exigem).
-  // Cartelas e B-rolls não têm bloco SRT correspondente e vão para /extras.
-  const sceneCompleted = sortedCompletedFrames.filter((f) => !f.isTitleCard && !f.isBroll);
-  const extraCompleted = sortedCompletedFrames.filter((f) => f.isTitleCard || f.isBroll);
+  // Cenas = 1:1 com os blocos do SRT (id inteiro). Cartelas e B-rolls agora
+  // OCUPAM blocos do SRT, então contam como cenas; apenas extras inseridos por
+  // versões antigas (id fracionário) vão para /extras.
+  const sceneCompleted = sortedCompletedFrames.filter((f) => Number.isInteger(f.id));
+  const extraCompleted = sortedCompletedFrames.filter((f) => !Number.isInteger(f.id));
 
   const framesWithVideoPrompt = [...frames]
-    .filter((f) => f.videoPrompt && !f.isTitleCard && !f.isBroll)
+    .filter((f) => f.videoPrompt && Number.isInteger(f.id))
     .sort((a, b) => a.id - b.id);
 
   // Nome dos extras: aponta a posição de inserção manual (apos_023_CARTELA)
@@ -155,7 +156,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       zip.file('TIMELINE.csv', timelineCsvContent);
 
       // Add PROMPTS.txt (somente cenas, 1:1 com o SRT)
-      const sceneFramesAll = frames.filter((f) => !f.isTitleCard && !f.isBroll);
+      const sceneFramesAll = frames.filter((f) => Number.isInteger(f.id));
       if (sceneFramesAll.length > 0) {
         const promptsTxtContent = sceneFramesAll.map((f) => `${f.id} ${f.visualPrompt}`).join('\n\n');
         zip.file('PROMPTS.txt', promptsTxtContent);
@@ -166,8 +167,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         zip.file('VIDEO_PROMPTS.txt', getVideoPromptsTxtContent());
       }
 
-      // Add EXTRAS_CARTELAS_BROLL.txt (guia de inserção manual + prompts)
-      const allExtras = frames.filter((f) => f.isTitleCard || f.isBroll).sort((a, b) => a.id - b.id);
+      // Add EXTRAS_CARTELAS_BROLL.txt (apenas extras legados de id fracionário)
+      const allExtras = frames.filter((f) => !Number.isInteger(f.id)).sort((a, b) => a.id - b.id);
       if (allExtras.length > 0) {
         const extrasTxt = allExtras
           .map((f, i) => {

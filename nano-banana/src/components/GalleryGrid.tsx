@@ -48,12 +48,12 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Sequential position (1-based, zero-padded) among SCENE frames only —
-  // cartelas/B-rolls live in /extras and don't shift the SRT-synced numbering
+  // Sequential position (1-based, zero-padded) among SRT-synced frames
+  // (id inteiro). Cartelas/B-rolls agora ocupam blocos e recebem número.
   const getFrameSequence = (frame: GeneratedFrame): string => {
-    if (frame.isTitleCard || frame.isBroll) return '';
+    if (!Number.isInteger(frame.id)) return '';
     const sceneIds = [...frames]
-      .filter((f) => !f.isTitleCard && !f.isBroll)
+      .filter((f) => Number.isInteger(f.id))
       .sort((a, b) => a.id - b.id)
       .map((f) => f.id);
     const pad = Math.max(3, String(sceneIds.length).length);
@@ -186,17 +186,19 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
 
                 {/* Overlays on Image */}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5">
-                  {frame.isTitleCard ? (
+                  {Number.isInteger(frame.id) && (
+                    <span className="bg-slate-950/80 backdrop-blur-md text-amber-400 font-extrabold text-xs px-2.5 py-1 rounded-lg border border-slate-800">
+                      #{frame.id}
+                    </span>
+                  )}
+                  {frame.isTitleCard && (
                     <span className="bg-amber-400 text-slate-950 font-extrabold text-[10px] px-2.5 py-1 rounded-lg shadow-md">
                       📋 CARTELA
                     </span>
-                  ) : frame.isBroll ? (
+                  )}
+                  {frame.isBroll && (
                     <span className="bg-teal-400 text-slate-950 font-extrabold text-[10px] px-2.5 py-1 rounded-lg shadow-md">
                       🎞 B-ROLL
-                    </span>
-                  ) : (
-                    <span className="bg-slate-950/80 backdrop-blur-md text-amber-400 font-extrabold text-xs px-2.5 py-1 rounded-lg border border-slate-800">
-                      #{frame.id}
                     </span>
                   )}
                   {frame.qcStatus === 'approved' && (

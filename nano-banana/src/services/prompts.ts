@@ -375,11 +375,20 @@ You receive the subtitle timeline (frames with id, timecodes and text),
 the CANONICAL ENTITY REGISTRY and the project Stylecard.
 Plan the B-roll set for this documentary.
 
+IMPORTANT — REPLACEMENT MODEL: a b-roll does NOT add a new clip. It
+REPLACES the visual of an EXISTING SRT block: while that block's
+narration plays, the screen shows the cutaway. Choose target blocks
+whose narration is abstract, retrospective, or mentions an object or
+detail — blocks where a cutaway is the STRONGEST possible visual and
+nothing essential is lost by not showing the main scene.
+
 RULES:
 1. EDITORIAL DISCIPLINE: at most ONE b-roll per scene, and ONLY where a
    cutaway genuinely adds value (an object just mentioned, a texture of
    the location, a symbolic detail). Total b-rolls must not exceed ~20%
    of the number of scenes. Quality over quantity — zero is acceptable.
+   NEVER target a block that introduces a character or shows a critical
+   action, and never two adjacent blocks.
 2. imagePrompt (ENGLISH, single line): a DETAIL or MACRO shot coherent
    with the surrounding scene — same location, era, lighting, palette
    and stylecard. When the detail belongs to a registered entity, reuse
@@ -393,8 +402,10 @@ RULES:
    continuous shot.
 4. label: a short human-readable name in the SCRIPT'S LANGUAGE
    (e.g., "Mãos puxando a rede", "Textura da pedra da basílica").
-5. OUTPUT: strict JSON array only. Each item:
-   { "insertAfterFrameId": <id of the frame the b-roll appears AFTER>,
+5. DURATION: the clip will be trimmed to the target block's duration —
+   motion must start at frame one, constant speed, readable within it.
+6. OUTPUT: strict JSON array only. Each item:
+   { "targetFrameId": <id of the SRT block whose visual becomes this b-roll>,
      "label": "...", "imagePrompt": "...", "videoPrompt": "..." }`;
 
 export const PROMPT_IMAGE_QC = `You are a meticulous Documentary Image Quality Control inspector.
@@ -437,6 +448,13 @@ the CANONICAL ENTITY REGISTRY (with detected niche and era) and the
 project's visual Stylecard.
 Your mission: plan the COMPLETE set of title cards for this documentary.
 
+IMPORTANT — REPLACEMENT MODEL: a title card does NOT add a new clip.
+It REPLACES the visual of an EXISTING SRT block: while that block's
+narration plays, the screen shows the card. Choose target blocks whose
+narration ITSELF announces the transition ("In 1749, in São Francisco",
+"twenty years later", a new chapter opening line) — the card then
+visually echoes exactly what the narrator is saying.
+
 RULES:
 
 1. PROFESSIONAL FREQUENCY DISCIPLINE (HIGHEST PRIORITY):
@@ -452,6 +470,8 @@ RULES:
    - NEVER place two cards consecutively. If a moment is minor, NO card.
    - If the script has no justified moment beyond the opening, return
      fewer cards — quality over quantity.
+   - NEVER target a block that introduces a character or contains a
+     critical visual action — only transitional narration blocks.
 
 2. CARD TEXT:
    - Maximum 6 words, in the SCRIPT'S ORIGINAL LANGUAGE.
@@ -493,8 +513,7 @@ RULES:
    times, no morphing, no rewriting, no distortion of the letters'.
 
 6. OUTPUT: strict JSON array only. Each item:
-   { "insertAfterFrameId": <id of the frame the card appears AFTER;
-      use 0 for a card BEFORE the first frame>,
+   { "targetFrameId": <id of the SRT block whose visual becomes this card>,
      "cardText": "...", "imagePrompt": "...", "videoPrompt": "...",
      "designStyle": "short label of the chosen design approach" }`;
 

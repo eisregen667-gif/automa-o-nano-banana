@@ -487,7 +487,7 @@ export default function App() {
 
   // PASSADA DE CARTELAS: plan and insert documentary title cards into the sequence
   const handleGenerateTitleCards = async () => {
-    const sceneFrames = framesRef.current.filter((f) => !f.isTitleCard && !f.isBroll);
+    const sceneFrames = framesRef.current.filter((f) => Number.isInteger(f.id));
     if (sceneFrames.length === 0 || isGeneratingTitleCards) return;
 
     setIsGeneratingTitleCards(true);
@@ -509,44 +509,42 @@ export default function App() {
         return;
       }
 
-      // Fractional ids place each card right after its anchor frame in the sequence
-      const usedIds = new Set(sceneFrames.map((f) => f.id));
-      const cardFrames: GeneratedFrame[] = plans.map((plan) => {
-        let cardId = plan.insertAfterFrameId + 0.5;
-        while (usedIds.has(cardId)) cardId += 0.01;
-        usedIds.add(cardId);
-
-        const anchor = sceneFrames.find((f) => f.id === plan.insertAfterFrameId);
-        const timecode = anchor ? anchor.timeEnd : (sceneFrames[0]?.timeStart || '00:00:00,000');
-
-        return {
-          id: cardId,
-          timeStart: timecode,
-          timeEnd: timecode,
-          subtitleText: `CARTELA: ${plan.cardText}`,
-          visualPrompt: plan.imagePrompt,
-          originalPrompt: plan.imagePrompt,
-          videoPrompt: plan.videoPrompt,
-          cameraShot: 'Title Card',
-          mood: plan.designStyle || 'Cinematic',
-          status: 'pending' as const,
-          isTitleCard: true
-        };
-      });
+      // Replacement model: cada cartela ocupa o visual do bloco SRT escolhido
+      const planByTarget = new Map(plans.map((p) => [p.targetFrameId, p]));
 
       setFrames((prev) => {
-        const next = [...prev.filter((f) => !f.isTitleCard), ...cardFrames].sort((a, b) => a.id - b.id);
+        const next = prev.map((f) => {
+          // Reverte cartelas anteriores para o prompt original da Passada 2
+          const reverted = f.isTitleCard
+            ? { ...f, isTitleCard: false, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined }
+            : f;
+
+          const plan = planByTarget.get(reverted.id);
+          if (!plan) return reverted;
+
+          return {
+            ...reverted,
+            isTitleCard: true,
+            visualPrompt: plan.imagePrompt,
+            videoPrompt: plan.videoPrompt,
+            cameraShot: 'Title Card',
+            mood: plan.designStyle || 'Cinematic',
+            status: 'pending' as const,
+            imageUrl: undefined,
+            error: undefined
+          };
+        });
         setDbItem('frames', next);
         setQueueState((q) => ({
           ...q,
           total: next.length,
-          completed: next.filter((f) => f.status === 'completed').length,
-          failed: next.filter((f) => f.status === 'failed').length
+          completed: next.filter((fr) => fr.status === 'completed').length,
+          failed: next.filter((fr) => fr.status === 'failed').length
         }));
         return next;
       });
 
-      logSuccess(`${cardFrames.length} cartela(s) inserida(s) na sequência. Gere as imagens pela fila para renderizá-las.`);
+      logSuccess(`${plans.length} cartela(s) aplicada(s) aos blocos ${plans.map((p) => `#${p.targetFrameId}`).join(', ')}. Rode a fila para renderizá-las.`);
     } catch (err: any) {
       console.error('Failed to generate title cards:', err);
       logError(`Falha ao gerar cartelas: ${err?.message || err}`);
@@ -557,7 +555,7 @@ export default function App() {
 
   // PASSADA DE B-ROLL: plan and insert detail cutaways into the sequence
   const handleGenerateBroll = async () => {
-    const sceneFrames = framesRef.current.filter((f) => !f.isTitleCard && !f.isBroll);
+    const sceneFrames = framesRef.current.filter((f) => Number.isInteger(f.id));
     if (sceneFrames.length === 0 || isGeneratingBroll) return;
 
     setIsGeneratingBroll(true);
@@ -579,43 +577,43 @@ export default function App() {
         return;
       }
 
-      const usedIds = new Set(framesRef.current.map((f) => f.id));
-      const brollFrames: GeneratedFrame[] = plans.map((plan) => {
-        let brollId = plan.insertAfterFrameId + 0.25;
-        while (usedIds.has(brollId)) brollId += 0.01;
-        usedIds.add(brollId);
-
-        const anchor = sceneFrames.find((f) => f.id === plan.insertAfterFrameId);
-        const timecode = anchor ? anchor.timeEnd : (sceneFrames[0]?.timeStart || '00:00:00,000');
-
-        return {
-          id: brollId,
-          timeStart: timecode,
-          timeEnd: timecode,
-          subtitleText: `B-ROLL: ${plan.label}`,
-          visualPrompt: plan.imagePrompt,
-          originalPrompt: plan.imagePrompt,
-          videoPrompt: plan.videoPrompt,
-          cameraShot: 'B-Roll Detail',
-          mood: 'Cutaway',
-          status: 'pending' as const,
-          isBroll: true
-        };
-      });
+      // Replacement model: cada B-roll ocupa o visual do bloco SRT escolhido
+      const planByTarget = new Map(plans.map((p) => [p.targetFrameId, p]));
 
       setFrames((prev) => {
-        const next = [...prev.filter((f) => !f.isBroll), ...brollFrames].sort((a, b) => a.id - b.id);
+        const next = prev.map((f) => {
+          // Reverte B-rolls anteriores para o prompt original da Passada 2
+          const reverted = f.isBroll
+            ? { ...f, isBroll: false, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined }
+            : f;
+
+          const plan = planByTarget.get(reverted.id);
+          // Não sobrescreve blocos que já são cartela
+          if (!plan || reverted.isTitleCard) return reverted;
+
+          return {
+            ...reverted,
+            isBroll: true,
+            visualPrompt: plan.imagePrompt,
+            videoPrompt: plan.videoPrompt,
+            cameraShot: 'B-Roll Detail',
+            mood: `Cutaway: ${plan.label}`,
+            status: 'pending' as const,
+            imageUrl: undefined,
+            error: undefined
+          };
+        });
         setDbItem('frames', next);
         setQueueState((q) => ({
           ...q,
           total: next.length,
-          completed: next.filter((f) => f.status === 'completed').length,
-          failed: next.filter((f) => f.status === 'failed').length
+          completed: next.filter((fr) => fr.status === 'completed').length,
+          failed: next.filter((fr) => fr.status === 'failed').length
         }));
         return next;
       });
 
-      logSuccess(`${brollFrames.length} B-roll(s) inserido(s) na sequência. Gere as imagens pela fila para renderizá-los.`);
+      logSuccess(`${plans.length} B-roll(s) aplicado(s) aos blocos ${plans.map((p) => `#${p.targetFrameId}`).join(', ')}. Rode a fila para renderizá-los.`);
     } catch (err: any) {
       console.error('Failed to generate B-roll:', err);
       logError(`Falha ao gerar B-roll: ${err?.message || err}`);
@@ -788,14 +786,14 @@ export default function App() {
 
   const handleDownloadSingle = async (frame: GeneratedFrame) => {
     if (!frame.imageUrl) return;
-    // Sequential position (1-based) among SCENE frames only, matching the ZIP order (1:1 com o SRT)
+    // Sequential position (1-based) among SRT-synced frames (id inteiro)
     const sceneIds = [...frames]
-      .filter((f) => !f.isTitleCard && !f.isBroll)
+      .filter((f) => Number.isInteger(f.id))
       .sort((a, b) => a.id - b.id)
       .map((f) => f.id);
-    const seq = frame.isTitleCard || frame.isBroll
-      ? Math.max(1, sceneIds.filter((id) => id < frame.id).length)
-      : sceneIds.indexOf(frame.id) + 1;
+    const seq = Number.isInteger(frame.id)
+      ? sceneIds.indexOf(frame.id) + 1
+      : Math.max(1, sceneIds.filter((id) => id < frame.id).length);
     const padLength = Math.max(3, String(sceneIds.length).length);
     try {
       const { blob, ext } = await urlToOptimizedBlob(frame.imageUrl);

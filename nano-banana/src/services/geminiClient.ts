@@ -290,7 +290,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
 }
 
 export interface TitleCardPlan {
-  insertAfterFrameId: number;
+  targetFrameId: number;
   cardText: string;
   imagePrompt: string;
   videoPrompt: string;
@@ -332,13 +332,13 @@ export async function generateTitleCards(
           items: {
             type: Type.OBJECT,
             properties: {
-              insertAfterFrameId: { type: Type.INTEGER, description: 'ID do frame após o qual a cartela entra (0 = antes do primeiro)' },
+              targetFrameId: { type: Type.INTEGER, description: 'ID do bloco SRT cujo visual vira esta cartela' },
               cardText: { type: Type.STRING, description: 'Texto exato da cartela (máx. 6 palavras, idioma do roteiro)' },
               imagePrompt: { type: Type.STRING, description: 'Prompt de geração da imagem da cartela em inglês' },
               videoPrompt: { type: Type.STRING, description: 'Prompt de animação ambiente com texto estático, em inglês' },
               designStyle: { type: Type.STRING, description: 'Rótulo curto do estilo de design escolhido' }
             },
-            required: ['insertAfterFrameId', 'cardText', 'imagePrompt', 'videoPrompt']
+            required: ['targetFrameId', 'cardText', 'imagePrompt', 'videoPrompt']
           }
         }
       }
@@ -351,7 +351,7 @@ export async function generateTitleCards(
       .filter((p: any) => p && typeof p.cardText === 'string' && p.cardText.trim() && typeof p.imagePrompt === 'string')
       .slice(0, 8)
       .map((p: any) => ({
-        insertAfterFrameId: Number(p.insertAfterFrameId) || 0,
+        targetFrameId: Number(p.targetFrameId) || 0,
         cardText: p.cardText.trim(),
         imagePrompt: p.imagePrompt.trim(),
         videoPrompt: (p.videoPrompt || '').trim(),
@@ -368,7 +368,7 @@ export async function generateTitleCards(
 }
 
 export interface BrollPlan {
-  insertAfterFrameId: number;
+  targetFrameId: number;
   label: string;
   imagePrompt: string;
   videoPrompt: string;
@@ -408,12 +408,12 @@ export async function generateBrollPlans(
           items: {
             type: Type.OBJECT,
             properties: {
-              insertAfterFrameId: { type: Type.INTEGER },
+              targetFrameId: { type: Type.INTEGER, description: 'ID do bloco SRT cujo visual vira este b-roll' },
               label: { type: Type.STRING },
               imagePrompt: { type: Type.STRING },
               videoPrompt: { type: Type.STRING }
             },
-            required: ['insertAfterFrameId', 'label', 'imagePrompt', 'videoPrompt']
+            required: ['targetFrameId', 'label', 'imagePrompt', 'videoPrompt']
           }
         }
       }
@@ -425,7 +425,7 @@ export async function generateBrollPlans(
     const plans: BrollPlan[] = parsed
       .filter((p: any) => p && typeof p.imagePrompt === 'string' && p.imagePrompt.trim())
       .map((p: any) => ({
-        insertAfterFrameId: Number(p.insertAfterFrameId) || 0,
+        targetFrameId: Number(p.targetFrameId) || 0,
         label: (p.label || 'Detalhe').trim(),
         imagePrompt: p.imagePrompt.trim(),
         videoPrompt: (p.videoPrompt || '').trim()
