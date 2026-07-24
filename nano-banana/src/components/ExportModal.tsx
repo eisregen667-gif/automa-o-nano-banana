@@ -35,9 +35,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     .filter((f) => f.status === 'completed' && f.imageUrl)
     .sort((a, b) => a.id - b.id);
 
+  // Cenas = 1:1 com os blocos do SRT (o que ferramentas de timeline exigem).
+  // Cartelas e B-rolls não têm bloco SRT correspondente e vão para /extras.
+  const sceneCompleted = sortedCompletedFrames.filter((f) => !f.isTitleCard && !f.isBroll);
+  const extraCompleted = sortedCompletedFrames.filter((f) => f.isTitleCard || f.isBroll);
+
   const framesWithVideoPrompt = [...frames]
-    .filter((f) => f.videoPrompt)
+    .filter((f) => f.videoPrompt && !f.isTitleCard && !f.isBroll)
     .sort((a, b) => a.id - b.id);
+
+  // Nome dos extras: aponta a posição de inserção manual (apos_023_CARTELA)
+  const extraBaseName = (frame: GeneratedFrame, index: number): string => {
+    const pad = Math.max(3, String(sceneCompleted.length).length);
+    const anchorId = Math.floor(frame.id);
+    const anchorIndex = sceneCompleted.findIndex((f) => f.id === anchorId);
+    const seqLabel = anchorIndex >= 0 ? String(anchorIndex + 1).padStart(pad, '0') : '000';
+    const type = frame.isTitleCard ? 'CARTELA' : 'BROLL';
+    return `apos_${seqLabel}_${type}_${index + 1}`;
+  };
 
   // VIDEO_PROMPTS.txt: ONE motion prompt per line, prefixed with the same
   // sequential number as the exported image (001, 002...) so the generated
@@ -54,22 +69,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       setIsZipping(true);
       setZipProgress(0);
-      logInfo(`Exportação iniciada: ${sortedCompletedFrames.length} imagens em ordem sequencial, otimizadas para no máximo 1MB cada...`);
+      logInfo(`Exportação iniciada: ${sceneCompleted.length} cenas (1:1 com o SRT) + ${extraCompleted.length} extras, otimizadas para no máximo 1MB cada...`);
 
       const zip = new JSZip();
       const imgFolder = zip.folder('nano_banana_images');
       const refFolder = zip.folder('references');
 
-      // Add each image to zip in perfect sequential order (001, 002...),
-      // compressed to at most 1MB each (PNG when it fits, otherwise JPEG).
+      // Add each SCENE image to zip in perfect sequential order (001, 002...),
+      // 1:1 with the SRT blocks, compressed to at most 1MB each.
       // Each entry gets an incremental modification date (+1s per image) so
       // sorting by name OR by date both yield the correct sequence.
-      const padLength = Math.max(3, String(sortedCompletedFrames.length).length);
+      const padLength = Math.max(3, String(sceneCompleted.length).length);
       const exportEntries: { frame: GeneratedFrame; filename: string }[] = [];
-      const baseTime = Date.now() - sortedCompletedFrames.length * 1000;
+      const baseTime = Date.now() - (sceneCompleted.length + extraCompleted.length) * 1000;
 
-      for (let i = 0; i < sortedCompletedFrames.length; i++) {
-        const frame = sortedCompletedFrames[i];
+      for (let i = 0; i < sceneCompleted.length; i++) {
+        const frame = sceneCompleted[i];
         const seq = i + 1;
         const entryDate = new Date(baseTime + i * 1000);
 
@@ -89,7 +104,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           }
         }
 
-        setZipProgress(Math.round(((i + 1) / (sortedCompletedFrames.length || 1)) * 60));
+        setZipProgress(Math.round(((i + 1) / (sceneCompleted.length || 1)) * 55));
+      }
+
+      // Extras (cartelas e B-rolls) em pasta separada, nomeados pela posição de inserção
+      if (extraCompleted.length > 0) {
+        const extrasFolder = zip.folder('extras_cartelas_broll');
+        for (let i = 0; i < extraCompleted.length; i++) {
+          const frame = extraCompleted[i];
+          const entryDate = new Date(baseTime + (sceneCompleted.length + i) * 1000);
+          try {
+            const { blob, ext } = await urlToOptimizedBlob(frame.imageUrl!);
+            extrasFolder?.file(`${extraBaseName(frame, i)}.${ext}`, blob, { date: entryDate });
+          } catch (err) {
+            console.warn(`Failed to optimize extra frame ${frame.id}:`, err);
+          }
+        }
       }
 
       // Add Reference Sheets to /references/REF_{id}.png
@@ -124,23 +154,44 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       const timelineCsvContent = csvHeader + csvRows.join('\n');
       zip.file('TIMELINE.csv', timelineCsvContent);
 
-      // Add PROMPTS.txt (01_SKILL_PRINCIPAL format)
-      if (frames.length > 0) {
-        const promptsTxtContent = frames.map((f) => `${f.id} ${f.visualPrompt}`).join('\n\n');
+      // Add PROMPTS.txt (somente cenas, 1:1 com o SRT)
+      const sceneFramesAll = frames.filter((f) => !f.isTitleCard && !f.isBroll);
+      if (sceneFramesAll.length > 0) {
+        const promptsTxtContent = sceneFramesAll.map((f) => `${f.id} ${f.visualPrompt}`).join('\n\n');
         zip.file('PROMPTS.txt', promptsTxtContent);
       }
 
-      // Add VIDEO_PROMPTS.txt (image filename + image-to-video motion prompt)
+      // Add VIDEO_PROMPTS.txt (somente cenas, ordem 1:1 com as imagens)
       if (framesWithVideoPrompt.length > 0) {
         zip.file('VIDEO_PROMPTS.txt', getVideoPromptsTxtContent());
+      }
+
+      // Add EXTRAS_CARTELAS_BROLL.txt (guia de inserção manual + prompts)
+      const allExtras = frames.filter((f) => f.isTitleCard || f.isBroll).sort((a, b) => a.id - b.id);
+      if (allExtras.length > 0) {
+        const extrasTxt = allExtras
+          .map((f, i) => {
+            const name = extraBaseName(f, i);
+            return `${name}\nInserir após a cena ${name.split('_')[1]} na timeline.\nPROMPT IMAGEM: ${f.visualPrompt}\nPROMPT VIDEO: ${f.videoPrompt || '-'}`;
+          })
+          .join('\n\n');
+        zip.file('EXTRAS_CARTELAS_BROLL.txt', extrasTxt);
       }
 
       // Add manifest.json (with entity_registry_version)
       const manifest = {
         exportedAt: new Date().toISOString(),
         entity_registry_version: '1.0',
-        totalFrames: sortedCompletedFrames.length,
+        totalFrames: sceneCompleted.length,
+        totalExtras: extraCompleted.length,
         detected_niche: entityRegistry?.detected_niche || 'General',
+        extras: extraCompleted.map((f, i) => ({
+          filename: extraBaseName(f, i),
+          type: f.isTitleCard ? 'cartela' : 'broll',
+          label: f.subtitleText,
+          visualPrompt: f.visualPrompt,
+          videoPrompt: f.videoPrompt,
+        })),
         frames: exportEntries.map(({ frame: f, filename }) => ({
           id: f.id,
           filename,
@@ -290,7 +341,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <div>
                   <h3 className="text-sm font-bold text-white">Pacote Completo em ZIP</h3>
                   <p className="text-xs text-slate-400">
-                    Inclui <strong className="text-amber-400">{sortedCompletedFrames.length} imagens PNG</strong> nomeadas por tempo + SRT + PROMPTS.txt
+                    <strong className="text-amber-400">{sceneCompleted.length} cenas</strong> (1:1 com o SRT)
+                    {extraCompleted.length > 0 && <> + <strong className="text-amber-400">{extraCompleted.length} extras</strong> em pasta separada</>}
+                    {' '}+ SRT + prompts
                   </p>
                 </div>
               </div>
@@ -318,7 +371,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 }`}
               >
-                <Download className="w-4 h-4" /> Baixar Pacote ZIP ({sortedCompletedFrames.length} Imagens)
+                <Download className="w-4 h-4" /> Baixar Pacote ZIP ({sceneCompleted.length} cenas{extraCompleted.length > 0 ? ` + ${extraCompleted.length} extras` : ''})
               </button>
             )}
           </div>

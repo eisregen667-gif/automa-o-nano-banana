@@ -788,10 +788,15 @@ export default function App() {
 
   const handleDownloadSingle = async (frame: GeneratedFrame) => {
     if (!frame.imageUrl) return;
-    // Sequential position (1-based) among all frames sorted by id, matching the ZIP order
-    const sortedIds = [...frames].sort((a, b) => a.id - b.id).map((f) => f.id);
-    const seq = sortedIds.indexOf(frame.id) + 1;
-    const padLength = Math.max(3, String(frames.length).length);
+    // Sequential position (1-based) among SCENE frames only, matching the ZIP order (1:1 com o SRT)
+    const sceneIds = [...frames]
+      .filter((f) => !f.isTitleCard && !f.isBroll)
+      .sort((a, b) => a.id - b.id)
+      .map((f) => f.id);
+    const seq = frame.isTitleCard || frame.isBroll
+      ? Math.max(1, sceneIds.filter((id) => id < frame.id).length)
+      : sceneIds.indexOf(frame.id) + 1;
+    const padLength = Math.max(3, String(sceneIds.length).length);
     try {
       const { blob, ext } = await urlToOptimizedBlob(frame.imageUrl);
       const filename = generateFilename(seq, frame.timeStart, frame.timeEnd, config.filenameTemplate, ext, padLength);
