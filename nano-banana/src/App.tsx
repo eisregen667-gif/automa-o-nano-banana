@@ -22,11 +22,11 @@ import {
   inspectImageQuality
 } from './services/geminiClient';
 import { AnimaticPlayer } from './components/AnimaticPlayer';
-import { WorkflowBar } from './components/WorkflowBar';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
 import { ActivityLog } from './components/ActivityLog';
 import { SAMPLE_SRT_PRESETS } from './data/sampleSrt';
-import { Header } from './components/Header';
+import { Sidebar, AppView } from './components/Sidebar';
+import { ProductionSteps } from './components/ProductionSteps';
 import { StylecardSection } from './components/StylecardSection';
 import { SrtInputSection } from './components/SrtInputSection';
 import { EntityReviewModal } from './components/EntityReviewModal';
@@ -73,6 +73,7 @@ export default function App() {
   const [qcState, setQcState] = useState<{ running: boolean; paused: boolean; done: number; total: number }>({ running: false, paused: false, done: 0, total: 0 });
   const qcControlRef = useRef<{ paused: boolean; stopped: boolean }>({ paused: false, stopped: false });
   const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
+  const [view, setView] = useState<AppView>('roteiro');
 
   const [queueState, setQueueState] = useState<QueueProgressState>({
     total: 0,
@@ -812,129 +813,175 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-950">
-      <Header
-        totalFrames={queueState.total}
-        completedFrames={queueState.completed}
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-400 selection:text-slate-950 flex flex-col lg:flex-row">
+      <Sidebar
+        view={view}
+        onNavigate={setView}
+        blocks={srtBlocks.length}
+        completed={queueState.completed}
+        total={queueState.total}
         inProgress={queueState.inProgress}
         onOpenSettings={() => setActiveModal('settings')}
         onOpenExport={() => setActiveModal('export')}
-        onOpenPromptMatrix={() => setActiveModal('promptMatrix')}
-        onOpenEntities={() => setActiveModal('entityReview')}
         onHardReset={handleHardReset}
-        hasPrompts={frames.length > 0}
-        hasEntities={!!entityRegistry && entityRegistry.entities.length > 0}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 py-8 space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <SrtInputSection
-            srtBlocks={srtBlocks}
-            rawSrtText={rawSrtText}
-            onUpdateSrt={(text, blocks) => {
-              setRawSrtText(text);
-              setSrtBlocks(blocks);
-            }}
-            onApplyPresetStyle={(styleText) => setStylecard((prev) => ({ ...prev, textStyle: styleText }))}
-          />
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-6xl w-full mx-auto px-4 lg:px-8 py-6 space-y-6">
+            {view === 'roteiro' && (
+              <>
+                <div>
+                  <h2 className="text-xl font-extrabold text-white">Roteiro</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Carregue ou cole o arquivo SRT do seu documentário — cada bloco de legenda vira uma cena.
+                  </p>
+                </div>
+                <SrtInputSection
+                  srtBlocks={srtBlocks}
+                  rawSrtText={rawSrtText}
+                  onUpdateSrt={(text, blocks) => {
+                    setRawSrtText(text);
+                    setSrtBlocks(blocks);
+                  }}
+                  onApplyPresetStyle={(styleText) => setStylecard((prev) => ({ ...prev, textStyle: styleText }))}
+                />
+                {srtBlocks.length > 0 && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setView('estilo')}
+                      className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Continuar → Estilo Visual
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
 
-          <StylecardSection
-            stylecard={stylecard}
-            onChangeStylecard={setStylecard}
-          />
-        </div>
-
-        <WorkflowBar
-          hasScript={srtBlocks.length > 0}
-          totalBlocks={srtBlocks.length}
-          hasPrompts={frames.length > 0}
-          isAnalyzing={isAnalyzingEntities || isGeneratingPrompts}
-          onGeneratePrompts={handleGeneratePrompts}
-          totalFrames={queueState.total}
-          completedFrames={queueState.completed}
-          queueInProgress={queueState.inProgress}
-          onStartQueue={startQueueProcessing}
-          qcRunning={qcState.running}
-          qcDone={qcState.done}
-          qcTotal={qcState.total}
-          onAutoQC={handleAutoQC}
-          cardsBusy={isGeneratingTitleCards}
-          onTitleCards={handleGenerateTitleCards}
-          brollBusy={isGeneratingBroll}
-          onBroll={handleGenerateBroll}
-          videoBusy={isGeneratingVideoPrompts}
-          hasVideoPrompts={frames.some((f) => !!f.videoPrompt)}
-          onVideoPrompts={handleGenerateVideoPrompts}
-          onPreview={() => setShowAnimatic(true)}
-          onExport={() => setActiveModal('export')}
-        />
-
-        {queueState.total > 0 && (
-          <QueueProgress
-            queueState={queueState}
-            onStartQueue={startQueueProcessing}
-            onPauseQueue={handlePauseQueue}
-            onResumeQueue={handleResumeQueue}
-            onStopQueue={handleStopQueue}
-            onRetryFailed={handleRetryFailed}
-            onChangeConcurrency={(num) => setQueueState((prev) => ({ ...prev, concurrency: num }))}
-          />
-        )}
-
-        {frames.length > 0 && (
-          <div className="space-y-4 pt-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Film className="w-5 h-5 text-amber-400" />
-                  Galeria do Diretor (Controle de Quadros)
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Visualize, edite e regenere frames individualmente conforme a história evolui.
-                </p>
-              </div>
-
-              {qcState.running && (
-                <div className="flex items-center gap-2 bg-slate-900 border border-emerald-500/30 rounded-xl px-3 py-2">
-                  <span className="text-xs font-bold text-emerald-300">
-                    🔍 Auto-QC: {qcState.paused ? 'pausado' : 'inspecionando'} {qcState.done}/{qcState.total}
-                  </span>
+            {view === 'estilo' && (
+              <>
+                <div>
+                  <h2 className="text-xl font-extrabold text-white">Estilo Visual</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Defina o Stylecard: a identidade visual aplicada a todas as imagens do documentário.
+                  </p>
+                </div>
+                <StylecardSection stylecard={stylecard} onChangeStylecard={setStylecard} />
+                <div className="flex justify-end">
                   <button
-                    onClick={qcState.paused ? handleResumeQC : handlePauseQC}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 transition-all cursor-pointer"
+                    onClick={() => setView('producao')}
+                    className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
                   >
-                    {qcState.paused ? '▶ Retomar' : '⏸ Pausar'}
-                  </button>
-                  <button
-                    onClick={handleStopQC}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border-rose-800 transition-all cursor-pointer"
-                  >
-                    ⏹ Parar
+                    Continuar → Produção
                   </button>
                 </div>
-              )}
-            </div>
+              </>
+            )}
 
-            <GalleryGrid
-              frames={frames}
-              onRegenerateFrame={handleRegenerateSingleFrame}
-              onUpdateFramePrompt={handleUpdateFramePrompt}
-              onDownloadSingle={handleDownloadSingle}
-            />
+            {view === 'producao' && (
+              <>
+                <div>
+                  <h2 className="text-xl font-extrabold text-white">Produção</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Siga as etapas na ordem — cada uma libera a próxima. O Log de Atividades acompanha tudo em tempo real.
+                  </p>
+                </div>
+                <ProductionSteps
+                  hasScript={srtBlocks.length > 0}
+                  hasPrompts={frames.length > 0}
+                  hasEntities={!!entityRegistry && entityRegistry.entities.length > 0}
+                  isAnalyzing={isAnalyzingEntities || isGeneratingPrompts}
+                  onGeneratePrompts={handleGeneratePrompts}
+                  onOpenEntities={() => setActiveModal('entityReview')}
+                  onOpenMatrix={() => setActiveModal('promptMatrix')}
+                  totalFrames={queueState.total}
+                  completedFrames={queueState.completed}
+                  queueInProgress={queueState.inProgress}
+                  onStartQueue={() => {
+                    setView('galeria');
+                    startQueueProcessing();
+                  }}
+                  qcRunning={qcState.running}
+                  qcPaused={qcState.paused}
+                  qcDone={qcState.done}
+                  qcTotal={qcState.total}
+                  onAutoQC={handleAutoQC}
+                  onPauseQC={handlePauseQC}
+                  onResumeQC={handleResumeQC}
+                  onStopQC={handleStopQC}
+                  cardsBusy={isGeneratingTitleCards}
+                  onTitleCards={handleGenerateTitleCards}
+                  brollBusy={isGeneratingBroll}
+                  onBroll={handleGenerateBroll}
+                  videoBusy={isGeneratingVideoPrompts}
+                  hasVideoPrompts={frames.some((f) => !!f.videoPrompt)}
+                  onVideoPrompts={handleGenerateVideoPrompts}
+                  onPreview={() => setShowAnimatic(true)}
+                  onExport={() => setActiveModal('export')}
+                />
+              </>
+            )}
+
+            {view === 'galeria' && (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+                      <Film className="w-5 h-5 text-amber-400" />
+                      Galeria do Diretor
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Visualize, edite e regenere cada quadro. Cartelas e B-rolls aparecem na posição da sequência.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {qcState.running && (
+                      <span className="text-xs font-bold text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 rounded-xl px-3 py-2">
+                        🔍 Auto-QC {qcState.paused ? 'pausado' : 'ativo'}: {qcState.done}/{qcState.total}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setShowAnimatic(true)}
+                      disabled={queueState.completed === 0}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                        queueState.completed > 0
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer'
+                          : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
+                      }`}
+                    >
+                      ▶ Preview
+                    </button>
+                  </div>
+                </div>
+
+                {queueState.total > 0 && (
+                  <QueueProgress
+                    queueState={queueState}
+                    onStartQueue={startQueueProcessing}
+                    onPauseQueue={handlePauseQueue}
+                    onResumeQueue={handleResumeQueue}
+                    onStopQueue={handleStopQueue}
+                    onRetryFailed={handleRetryFailed}
+                    onChangeConcurrency={(num) => setQueueState((prev) => ({ ...prev, concurrency: num }))}
+                  />
+                )}
+
+                <GalleryGrid
+                  frames={frames}
+                  onRegenerateFrame={handleRegenerateSingleFrame}
+                  onUpdateFramePrompt={handleUpdateFramePrompt}
+                  onDownloadSingle={handleDownloadSingle}
+                />
+              </>
+            )}
           </div>
-        )}
-      </main>
+        </main>
 
-      <footer className="border-t border-slate-800 bg-slate-900/60 py-6 px-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="flex items-center gap-1.5 font-semibold text-slate-400">
-            🍌 Nano Banana AI — Sistema de Automação de Visão em Massa
-          </p>
-          <p className="text-slate-500">
-            Powered by Gemini 3.1 Pro &amp; Imagen 3 Visão
-          </p>
-        </div>
-      </footer>
+        <footer className="border-t border-slate-800 bg-slate-900/60 py-3 px-4 text-center text-[11px] text-slate-500">
+          🍌 Nano Banana AI — Automação de Documentários por IA · Powered by Gemini 3.1 Pro &amp; Imagen 3
+        </footer>
+      </div>
 
       {/* Modals */}
       <SettingsModal
@@ -959,7 +1006,10 @@ export default function App() {
         onClose={() => setActiveModal(null)}
         frames={frames}
         onUpdateFramePrompt={handleUpdateFramePrompt}
-        onStartQueue={startQueueProcessing}
+        onStartQueue={() => {
+          setView('galeria');
+          startQueueProcessing();
+        }}
       />
 
       {entityRegistry && (
