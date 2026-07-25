@@ -159,14 +159,56 @@ const PROMPT_FRAME_SCHEMA = {
       timeStart: { type: Type.STRING, description: 'Tempo de início (00:00:10,000)' },
       timeEnd: { type: Type.STRING, description: 'Tempo de término (00:00:15,000)' },
       subtitleText: { type: Type.STRING, description: 'Legenda original' },
-      visualPrompt: { type: Type.STRING, description: 'Prompt em inglês detalhado' },
+      visual: {
+        type: Type.OBJECT,
+        description: 'Checklist estruturado do prompt visual (todos os campos obrigatórios)',
+        properties: {
+          subject: { type: Type.STRING, description: 'Sujeitos com descrições canônicas literais, nacionalidade/fenótipo e era' },
+          action: { type: Type.STRING, description: 'O que acontece neste beat narrativo' },
+          environment: { type: Type.STRING, description: 'Cenário, arquitetura, materiais, detalhes de época' },
+          camera: { type: Type.STRING, description: 'Enquadramento, ângulo, altura, lente (mm), horizonte' },
+          lighting: { type: Type.STRING, description: 'Fontes de luz, mood e paleta do ato (color script)' },
+          depth: { type: Type.STRING, description: 'Foreground/midground/background + pista de profundidade + âncora de escala' },
+          style: { type: Type.STRING, description: 'Diretrizes do Stylecard e meio de renderização' },
+          negative: { type: Type.STRING, description: 'Negative Lock completo + exclusões da era' }
+        },
+        required: ['subject', 'action', 'environment', 'camera', 'lighting', 'depth', 'style', 'negative']
+      },
       cameraShot: { type: Type.STRING, description: 'Tipo de enquadramento' },
       mood: { type: Type.STRING, description: 'Atmosfera' },
       sceneId: { type: Type.STRING, description: 'ID da cena contínua' }
     },
-    required: ['id', 'timeStart', 'timeEnd', 'subtitleText', 'visualPrompt']
+    required: ['id', 'timeStart', 'timeEnd', 'subtitleText', 'visual']
   }
 };
+
+// Monta o prompt final de geração a partir do checklist estruturado
+function assembleVisualPrompt(visual: any): string {
+  if (!visual || typeof visual !== 'object') return '';
+  const clean = (s: any) => (typeof s === 'string' ? s.trim().replace(/\.+$/, '') : '');
+  const parts = [
+    clean(visual.subject),
+    clean(visual.action),
+    clean(visual.environment),
+    clean(visual.camera),
+    clean(visual.lighting),
+    clean(visual.depth),
+    clean(visual.style)
+  ].filter(Boolean);
+  let prompt = parts.join('. ');
+  const negative = clean(visual.negative);
+  if (negative) prompt += `. Negative prompt: ${negative}`;
+  return prompt;
+}
+
+// Garante visualPrompt preenchido, montando a partir do checklist quando presente
+function finalizePromptFrame(f: any): any {
+  const assembled = assembleVisualPrompt(f?.visual);
+  return {
+    ...f,
+    visualPrompt: assembled || (typeof f?.visualPrompt === 'string' ? f.visualPrompt : '')
+  };
+}
 
 function fallbackFrame(block: SrtBlock, textStylecard?: string): ParsedPromptFrame {
   return {
@@ -250,6 +292,8 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
 
     frames = JSON.parse(cleanGeminiJson(response.text || '[]'));
     if (!Array.isArray(frames)) frames = [];
+    // Monta o prompt final do checklist; entradas sem prompt válido caem no retry
+    frames = frames.map(finalizePromptFrame).filter((f: any) => f.visualPrompt);
   } catch (err: any) {
     console.error('[Nano Banana] Falha ao gerar prompts visuais (Passada 2):', err);
     logError(`Passada 2: falha na geração dos blocos #${firstId}–#${lastId}: ${err?.message || err}`);
@@ -278,7 +322,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
         if (retryRes.text) {
           const missingFrames = JSON.parse(cleanGeminiJson(retryRes.text));
           if (Array.isArray(missingFrames)) {
-            frames = [...frames, ...missingFrames];
+            frames = [...frames, ...missingFrames.map(finalizePromptFrame).filter((f: any) => f.visualPrompt)];
           }
         }
       } catch (retryErr) {

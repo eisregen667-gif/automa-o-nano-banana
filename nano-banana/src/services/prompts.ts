@@ -390,9 +390,30 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
         no miniature or giant effect" + the era-appropriate exclusions
         from the ERA LOCK.
 
-11. OUTPUT:
-    - Strictly single-line natural language prompt strings in English
-      inside the required JSON schema, one per SRT block, exact count N.`;
+11. OUTPUT — STRUCTURED VISUAL FIELDS (MANDATORY CHECKLIST):
+    For EVERY SRT block return the "visual" object with ALL EIGHT
+    fields filled. This is a hard checklist — no field may be empty,
+    generic or merged into another:
+    * subject: who/what is in frame — registered entities with their
+      canonical descriptions WORD-FOR-WORD, nationality/phenotype and
+      era explicitly stated for every person.
+    * action: what happens in this narrative beat.
+    * environment: setting, architecture, materials, era-specific
+      details, weather.
+    * camera: framing type (following the shot grammar), angle, camera
+      height, lens in mm, and horizon placement.
+    * lighting: light sources, mood, and the act's color script
+      palette stated explicitly.
+    * depth: FOREGROUND element / MIDGROUND subject with stated
+      distance / BACKGROUND with atmospheric perspective + one depth
+      cue + one real-world scale anchor.
+    * style: the Stylecard directives and rendering medium (or the
+      archival/prop medium when rule 6-D applies).
+    * negative: the full mandatory Negative Lock plus the
+      era-appropriate exclusions from the ERA LOCK.
+    Each field is a natural English prose fragment (they will be
+    concatenated into the final generation prompt). Exact count N,
+    same ids as the input blocks.`;
 
 export const PROMPT_MUSIC_DIRECTOR = `You are a Documentary Music Supervisor. You receive the subtitle
 timeline (with timecodes), the CANONICAL ENTITY REGISTRY (niche, era,
