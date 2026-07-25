@@ -27,6 +27,9 @@ interface ProductionStepsProps {
   onTitleCards: () => void;
   brollBusy: boolean;
   onBroll: () => void;
+  musicBusy: boolean;
+  hasMusic: boolean;
+  onMusic: () => void;
   videoBusy: boolean;
   hasVideoPrompts: boolean;
   onVideoPrompts: () => void;
@@ -162,7 +165,7 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
         num={3}
         state={s3}
         title="Refinamento (opcional)"
-        description="Inspeção visual automática com correções, cartelas profissionais e cutaways de B-roll."
+        description="Inspeção visual automática, cartelas profissionais, cutaways de B-roll e trilha sonora."
       >
         {p.qcRunning ? (
           <>
@@ -184,6 +187,9 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
         </Btn>
         <Btn onClick={p.onBroll} disabled={!p.hasPrompts} busy={p.brollBusy} variant="secondary" title="Cutaways de detalhe (máx. 1 por cena)">
           🎞 B-Roll
+        </Btn>
+        <Btn onClick={p.onMusic} disabled={!p.hasPrompts} busy={p.musicBusy} variant="secondary" title="Planeja 2-5 faixas alinhadas aos atos, com prompts para Suno/Udio e timecodes de entrada — baixa o TRILHA_SONORA.txt na hora">
+          🎵 {p.hasMusic ? 'Trilha ✓' : 'Trilha Sonora'}
         </Btn>
       </StepRow>
 

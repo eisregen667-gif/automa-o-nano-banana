@@ -14,6 +14,7 @@ interface ExportModalProps {
   config: GeneratorConfig;
   entityRegistry?: EntityRegistry | null;
   entityReferenceSheets?: Record<string, string>;
+  musicBrief?: string | null;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -24,6 +25,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   config,
   entityRegistry,
   entityReferenceSheets = {},
+  musicBrief,
 }) => {
   const [isZipping, setIsZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState(0);
@@ -209,6 +211,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       // Add updated SRT
       if (srtBlocks.length > 0) {
         zip.file('subtitles_updated.srt', stringifySrt(srtBlocks));
+      }
+
+      // Add TRILHA_SONORA.txt (guia de música por ato)
+      if (musicBrief) {
+        zip.file('TRILHA_SONORA.txt', musicBrief);
       }
 
       setZipProgress(90);

@@ -4,7 +4,7 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -437,6 +437,74 @@ export async function generateBrollPlans(
     console.error('[Nano Banana] Falha na geração de B-roll:', err);
     logError(`Passada de B-Roll falhou: ${err?.message || err}`);
     return [];
+  }
+}
+
+/**
+ * PASSADA DE TRILHA SONORA: planeja 2-5 faixas longas alinhadas aos atos,
+ * com prompts prontos para Suno/Udio e timecodes de entrada. Retorna o
+ * guia formatado em texto (TRILHA_SONORA.txt) ou null em caso de falha.
+ */
+export async function generateMusicBrief(
+  frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
+  entityRegistry: EntityRegistry | null,
+  textStylecard?: string,
+  apiKey?: string
+): Promise<string | null> {
+  const key = apiKey?.trim();
+  if (!key || frames.length === 0) {
+    if (!key) logWarn('Sem chave API do Gemini: geração da trilha sonora indisponível.');
+    return null;
+  }
+
+  logInfo('Passada de Trilha Sonora: planejando as faixas do documentário...');
+
+  try {
+    const ai = getClient(key);
+    const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames.map((f) => ({ id: f.id, timeStart: f.timeStart, timeEnd: f.timeEnd, text: f.subtitleText })), null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic documentary'}`
+      }],
+      config: {
+        systemInstruction: PROMPT_MUSIC_DIRECTOR,
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const parsed = extractJsonObject(response.text || '');
+    if (!parsed || !Array.isArray(parsed.segments) || parsed.segments.length === 0) {
+      logError('Passada de Trilha Sonora: resposta inválida do modelo.');
+      return null;
+    }
+
+    const lines: string[] = [];
+    lines.push('🎵 TRILHA SONORA — GUIA DE MONTAGEM');
+    lines.push('Gere cada faixa no Suno/Udio com o prompt indicado e solte no timecode de entrada. Pronto.');
+    lines.push('');
+
+    if (parsed.intro_sting?.sunoPrompt) {
+      lines.push('VINHETA DE ABERTURA (10-20s — sob o cold open / cartela de título)');
+      lines.push(`PROMPT: ${parsed.intro_sting.sunoPrompt}`);
+      if (parsed.intro_sting.note) lines.push(`NOTA: ${parsed.intro_sting.note}`);
+      lines.push('');
+    }
+
+    parsed.segments.forEach((seg: any, i: number) => {
+      lines.push(`FAIXA ${i + 1} — ${seg.act_label || `Ato ${i + 1}`}  [${seg.timeStart || '?'} → ${seg.timeEnd || '?'}]`);
+      lines.push(`PROMPT: ${seg.sunoPrompt || '-'}`);
+      if (seg.mixNote) lines.push(`MIX: ${seg.mixNote}`);
+      lines.push('');
+    });
+
+    logSuccess(`Trilha Sonora planejada: vinheta de abertura + ${parsed.segments.length} faixa(s) alinhadas aos atos.`);
+    return lines.join('\n');
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha na trilha sonora:', err);
+    logError(`Passada de Trilha Sonora falhou: ${err?.message || err}`);
+    return null;
   }
 }
 

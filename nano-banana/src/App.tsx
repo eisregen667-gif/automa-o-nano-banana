@@ -19,6 +19,7 @@ import {
   generateVideoPrompts,
   generateTitleCards,
   generateBrollPlans,
+  generateMusicBrief,
   inspectImageQuality
 } from './services/geminiClient';
 import { AnimaticPlayer } from './components/AnimaticPlayer';
@@ -70,6 +71,8 @@ export default function App() {
   const [isGeneratingVideoPrompts, setIsGeneratingVideoPrompts] = useState<boolean>(false);
   const [isGeneratingTitleCards, setIsGeneratingTitleCards] = useState<boolean>(false);
   const [isGeneratingBroll, setIsGeneratingBroll] = useState<boolean>(false);
+  const [isGeneratingMusic, setIsGeneratingMusic] = useState<boolean>(false);
+  const [musicBrief, setMusicBrief] = useState<string | null>(null);
   const [qcState, setQcState] = useState<{ running: boolean; paused: boolean; done: number; total: number }>({ running: false, paused: false, done: 0, total: 0 });
   const qcControlRef = useRef<{ paused: boolean; stopped: boolean }>({ paused: false, stopped: false });
   const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
@@ -129,6 +132,9 @@ export default function App() {
 
         const savedStylecard = await getDbItem<StyleCard>('stylecard');
         if (savedStylecard) setStylecard(savedStylecard);
+
+        const savedMusic = await getDbItem<string>('musicBrief');
+        if (savedMusic) setMusicBrief(savedMusic);
 
         if (savedFrames && Array.isArray(savedFrames) && savedFrames.length > 0) {
           logInfo(`Projeto anterior restaurado: ${savedFrames.length} frames carregados do navegador.`);
@@ -739,6 +745,47 @@ export default function App() {
     qcControlRef.current.paused = false;
   };
 
+  // PASSADA DE TRILHA SONORA: plan the score aligned to the color script acts
+  const handleGenerateMusic = async () => {
+    const sceneFrames = framesRef.current.filter((f) => Number.isInteger(f.id));
+    if (sceneFrames.length === 0 || isGeneratingMusic) return;
+
+    setIsGeneratingMusic(true);
+    try {
+      const brief = await generateMusicBrief(
+        sceneFrames.map((f) => ({
+          id: f.id,
+          timeStart: f.timeStart,
+          timeEnd: f.timeEnd,
+          subtitleText: f.subtitleText
+        })),
+        entityRegistry,
+        stylecard.textStyle,
+        config.customApiKey
+      );
+
+      if (brief) {
+        setMusicBrief(brief);
+        await setDbItem('musicBrief', brief);
+        // Download imediato do guia
+        const blob = new Blob([brief], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'TRILHA_SONORA.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (err: any) {
+      console.error('Failed to generate music brief:', err);
+      logError(`Falha ao gerar a trilha sonora: ${err?.message || err}`);
+    } finally {
+      setIsGeneratingMusic(false);
+    }
+  };
+
   // PASSADA 3: Generate image-to-video motion prompts for all frames
   const handleGenerateVideoPrompts = async () => {
     const currentFrames = framesRef.current;
@@ -917,6 +964,9 @@ export default function App() {
                   onTitleCards={handleGenerateTitleCards}
                   brollBusy={isGeneratingBroll}
                   onBroll={handleGenerateBroll}
+                  musicBusy={isGeneratingMusic}
+                  hasMusic={!!musicBrief}
+                  onMusic={handleGenerateMusic}
                   videoBusy={isGeneratingVideoPrompts}
                   hasVideoPrompts={frames.some((f) => !!f.videoPrompt)}
                   onVideoPrompts={handleGenerateVideoPrompts}
@@ -1002,6 +1052,7 @@ export default function App() {
         config={config}
         entityRegistry={entityRegistry}
         entityReferenceSheets={entityReferenceSheets}
+        musicBrief={musicBrief}
       />
 
       <PromptMatrixModal
