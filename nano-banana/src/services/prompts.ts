@@ -272,17 +272,35 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
      same act share a consistent, film-graded color identity; the
      palette evolves across acts exactly as scripted.
 
-6-D. ARCHIVAL SIMULATION ENGINE (USE SPARINGLY — MAX ~15% OF BLOCKS):
-   - When a block narrates past events, documented records, memories or
-     retrospective facts — and ONLY when it strengthens the storytelling
-     — render it as SIMULATED ARCHIVAL MATERIAL appropriate to the
-     niche and era: grainy black-and-white photograph, sepia
-     photographic plate, aged film still with scratches and vignetting,
-     vintage newspaper photo, CRT screen capture, faded polaroid.
-   - State the archival medium explicitly in the prompt and set
+6-D. FACTUAL MEDIA RECREATION ENGINE (Discovery/History style — USE
+   SPARINGLY, MAX ~20% OF BLOCKS, and ONLY when the narration cites a
+   documented fact, event, record, report or figure):
+   Recreate the LOOK of real-world media and records entirely by AI,
+   grounded in the researched facts — zero rights issues: NEVER real
+   newspaper mastheads, TV channel brands, logos or real photographs.
+   Choose the medium by niche and era:
+   a) AGED PHOTO / FILM: grainy B&W or sepia photograph, aged film
+      still with scratches and vignetting, faded polaroid.
+   b) RECREATED DOCUMENT PROP: period letter, official decree, ship
+      log, church registry, court file — shot as a MACRO PROP: sharp
+      focus on a wax seal, signature, stamp or ONE short legible line
+      in period handwriting/typography (max 5 words, correct
+      spelling); ALL remaining text soft and illegible through shallow
+      depth of field; aged paper texture, candle or window light.
+   c) RECREATED NEWSPAPER / PRINT: front-page prop with ONE short bold
+      headline (max 5 words, correct spelling, era-accurate
+      typography, GENERIC masthead); every other column blurred out of
+      focus by depth of field.
+   d) BROADCAST LOOK (20th-21st century niches only): handheld ENG
+      news-camera aesthetic, CRT or VHS texture, helicopter aerial,
+      security-camera angle — with NO on-screen text and NO logos.
+   e) PERIOD MAP: era-accurate cartography of the real region (use the
+      researched geography), the relevant location emphasized, an
+      expedition-journey mood, aged parchment or print as fits the era.
+   - State the chosen medium explicitly in the prompt and set
      cameraShot to "Archival". Entity consistency locks still apply.
-   - Never use archival treatment on two consecutive blocks, on the
-     opening block, or in a way that conflicts with the color script.
+   - Never on two consecutive blocks, never on the opening block, and
+     never conflicting with the color script.
 
 7. DEPTH LAYERING ENGINE (MANDATORY — REAL SENSE OF DEPTH):
    - Every prompt MUST explicitly define three depth planes:
@@ -537,6 +555,12 @@ RULES:
    - Maximum 6 words, in the SCRIPT'S ORIGINAL LANGUAGE.
    - Format like professional documentaries: "Location, Year",
      "Region — Year", a short time-jump phrase, or a chapter title.
+   - FACT CARDS (Discovery/History style): a card may also state ONE
+     short DOCUMENTED fact or figure taken verbatim from the script
+     ("22 METROS DE ALTURA", "12 MILHÕES DE PEREGRINOS POR ANO") at a
+     moment where the narration highlights that fact. NEVER invent
+     numbers — only facts present in the script. Fact cards count
+     within the same frequency limits.
    - Spelling must be EXACT and correct — this text will be rendered
      inside the generated image.
 
@@ -665,6 +689,10 @@ RULES:
      aged film still), use classic documentary rostrum treatment:
      a slow Ken Burns-style zoom or pan across the still, with subtle
      film grain flicker — nothing else moves inside the photo.
+   - For recreated DOCUMENT, NEWSPAPER or MAP props: slow rostrum
+     travel across the prop, or a gentle rack-focus drift, with
+     candlelight flicker or dust in the light beam when era-fitting —
+     any visible text remains perfectly static and unchanged.
 
 6. STYLE PRESERVATION: cinematic, stable, temporally coherent motion that
    preserves the original art style, mood and lighting of the image.
