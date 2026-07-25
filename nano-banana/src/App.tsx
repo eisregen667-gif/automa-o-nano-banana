@@ -74,6 +74,12 @@ export default function App() {
   const [isGeneratingMusic, setIsGeneratingMusic] = useState<boolean>(false);
   const [musicBrief, setMusicBrief] = useState<string | null>(null);
   const [referenceUrls, setReferenceUrls] = useState<string>('');
+  const [autoPasses, setAutoPasses] = useState<{ cards: boolean; broll: boolean; video: boolean; music: boolean }>({
+    cards: true,
+    broll: true,
+    video: true,
+    music: true
+  });
   const [qcState, setQcState] = useState<{ running: boolean; paused: boolean; done: number; total: number }>({ running: false, paused: false, done: 0, total: 0 });
   const qcControlRef = useRef<{ paused: boolean; stopped: boolean }>({ paused: false, stopped: false });
   const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
@@ -139,6 +145,9 @@ export default function App() {
 
         const savedUrls = await getDbItem<string>('referenceUrls');
         if (savedUrls) setReferenceUrls(savedUrls);
+
+        const savedAutoPasses = await getDbItem<typeof autoPasses>('autoPasses');
+        if (savedAutoPasses) setAutoPasses(savedAutoPasses);
 
         if (savedFrames && Array.isArray(savedFrames) && savedFrames.length > 0) {
           logInfo(`Projeto anterior restaurado: ${savedFrames.length} frames carregados do navegador.`);
@@ -274,6 +283,7 @@ export default function App() {
         }));
 
         setFrames(generatedFrames);
+        framesRef.current = generatedFrames;
         await setDbItem('frames', generatedFrames);
 
         setQueueState((prev) => ({
@@ -284,6 +294,25 @@ export default function App() {
           inProgress: false,
           isPaused: false
         }));
+
+        // Passadas automáticas selecionadas (encadeadas na ordem certa)
+        const flush = () => new Promise((r) => setTimeout(r, 80));
+        if (autoPasses.cards) {
+          await flush();
+          await handleGenerateTitleCards();
+        }
+        if (autoPasses.broll) {
+          await flush();
+          await handleGenerateBroll();
+        }
+        if (autoPasses.video) {
+          await flush();
+          await handleGenerateVideoPrompts();
+        }
+        if (autoPasses.music) {
+          await flush();
+          await handleGenerateMusic(false);
+        }
 
         setActiveModal('promptMatrix');
       } else {
@@ -767,7 +796,7 @@ export default function App() {
   };
 
   // PASSADA DE TRILHA SONORA: plan the score aligned to the color script acts
-  const handleGenerateMusic = async () => {
+  const handleGenerateMusic = async (autoDownload: boolean = true) => {
     const sceneFrames = framesRef.current.filter((f) => Number.isInteger(f.id));
     if (sceneFrames.length === 0 || isGeneratingMusic) return;
 
@@ -788,6 +817,7 @@ export default function App() {
       if (brief) {
         setMusicBrief(brief);
         await setDbItem('musicBrief', brief);
+        if (!autoDownload) return;
         // Download imediato do guia
         const blob = new Blob([brief], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -1015,6 +1045,14 @@ export default function App() {
                   onVideoPrompts={handleGenerateVideoPrompts}
                   onPreview={() => setShowAnimatic(true)}
                   onExport={() => setActiveModal('export')}
+                  autoPasses={autoPasses}
+                  onToggleAutoPass={(key) => {
+                    setAutoPasses((prev) => {
+                      const next = { ...prev, [key]: !prev[key] };
+                      setDbItem('autoPasses', next);
+                      return next;
+                    });
+                  }}
                 />
               </>
             )}

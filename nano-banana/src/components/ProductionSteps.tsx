@@ -35,6 +35,8 @@ interface ProductionStepsProps {
   onVideoPrompts: () => void;
   onPreview: () => void;
   onExport: () => void;
+  autoPasses: { cards: boolean; broll: boolean; video: boolean; music: boolean };
+  onToggleAutoPass: (key: 'cards' | 'broll' | 'video' | 'music') => void;
 }
 
 const NUM_STYLES: Record<StepState, string> = {
@@ -117,8 +119,33 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
   const s4: StepState = p.videoBusy ? 'busy' : p.hasVideoPrompts ? 'done' : p.hasPrompts ? 'ready' : 'locked';
   const s5: StepState = p.completedFrames > 0 ? 'ready' : 'locked';
 
+  const AUTO_OPTIONS: { key: 'cards' | 'broll' | 'video' | 'music'; label: string }[] = [
+    { key: 'cards', label: '📋 Cartelas' },
+    { key: 'broll', label: '🎞 B-Roll' },
+    { key: 'video', label: '🎬 Prompts de Vídeo' },
+    { key: 'music', label: '🎵 Trilha Sonora' }
+  ];
+
   return (
     <div className="space-y-3">
+      {/* Passadas automáticas ao gerar prompts */}
+      <div className="flex items-center gap-x-5 gap-y-2 flex-wrap bg-slate-900/60 border border-slate-800 rounded-xl px-4 py-3">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Ao gerar prompts, incluir automaticamente:
+        </span>
+        {AUTO_OPTIONS.map((opt) => (
+          <label key={opt.key} className="flex items-center gap-1.5 text-xs text-slate-200 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={p.autoPasses[opt.key]}
+              onChange={() => p.onToggleAutoPass(opt.key)}
+              className="rounded border-slate-700 bg-slate-950 text-amber-500 focus:ring-amber-500/20"
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+
       <StepRow
         num={1}
         state={s1}
