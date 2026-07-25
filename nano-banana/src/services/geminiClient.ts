@@ -4,6 +4,7 @@
 
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
+import { calculateDurationSeconds } from '../utils/srtParser';
 import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
@@ -187,7 +188,8 @@ export async function parsePrompts(
   entityRegistry: EntityRegistry | null,
   textStylecard?: string,
   referenceImageBase64?: string,
-  apiKey?: string
+  apiKey?: string,
+  contextBlocks: SrtBlock[] = []
 ): Promise<ParsedPromptFrame[]> {
   const key = apiKey?.trim();
   if (!key) {
@@ -207,7 +209,15 @@ export async function parsePrompts(
       ? JSON.stringify(entityRegistry, null, 2)
       : '{"detected_niche": "General", "entities": []}';
 
-  const userPrompt = `Abaixo está o arquivo de legendas SRT completo para gerar os prompts visuais:\n${JSON.stringify(srtBlocks, null, 2)}
+  // Enriquecidos com a duração real de cada bloco (para composição e ritmo)
+  const enrich = (blocks: SrtBlock[]) =>
+    blocks.map((b) => ({ ...b, durationSeconds: calculateDurationSeconds(b.timeStart, b.timeEnd) }));
+
+  const contextSection = contextBlocks.length > 0
+    ? `CONTEXTO NARRATIVO (blocos anteriores, já processados — NÃO gere prompts para eles, use apenas para continuidade de cena/iluminação):\n${JSON.stringify(enrich(contextBlocks), null, 2)}\n\n`
+    : '';
+
+  const userPrompt = `${contextSection}Blocos SRT para gerar os prompts visuais (gere EXATAMENTE um por bloco abaixo):\n${JSON.stringify(enrich(srtBlocks), null, 2)}
 
 CANONICAL ENTITY REGISTRY (JSON):
 ${entityRegistryText}
@@ -681,8 +691,10 @@ export async function generateEntityReference(
     const ai = getClient(key);
     const referencePrompt = `${entity.canonical_description}, full body, neutral gray studio background, soft even lighting, front view, no scene, no text, no watermark`;
 
+    // Modelo forte: a ficha de referência define a identidade da entidade em
+    // todos os frames — fidelidade aqui vale mais que custo
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite-image',
+      model: 'gemini-3.1-flash-image',
       contents: { parts: [{ text: referencePrompt }] },
       config: {
         imageConfig: { aspectRatio: '1:1' as any }
@@ -763,28 +775,39 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
 
   const buildParts = (currentPrompt: string) => {
     const parts: any[] = [];
-
-    const allRefImages: string[] = [];
-    if (Array.isArray(referenceImages)) {
-      allRefImages.push(...referenceImages.filter((img) => typeof img === 'string' && img.startsWith('data:image')));
-    }
-    if (referenceImageBase64 && referenceImageBase64.startsWith('data:image')) {
-      allRefImages.push(referenceImageBase64);
-    }
-
-    if (allRefImages.length > 0) {
-      for (const refImg of allRefImages) {
-        const partsHeader = refImg.split(';');
-        const mimeType = partsHeader[0].replace('data:', '');
-        const base64Data = partsHeader[1].replace('base64,', '');
-        parts.push({ inlineData: { mimeType, data: base64Data } });
-      }
+    const pushImage = (dataUrl: string) => {
+      const partsHeader = dataUrl.split(';');
       parts.push({
-        text: `Generate a new scene featuring the EXACT same subject(s) shown in the reference image(s), preserving faces, clothing, colors and design identically, now: ${currentPrompt}`
+        inlineData: {
+          mimeType: partsHeader[0].replace('data:', ''),
+          data: partsHeader[1].replace('base64,', '')
+        }
       });
-    } else {
-      parts.push({ text: currentPrompt });
+    };
+
+    // Referências de IDENTIDADE (fichas de entidades): preservar o sujeito exato
+    const entityRefs = (Array.isArray(referenceImages) ? referenceImages : [])
+      .filter((img) => typeof img === 'string' && img.startsWith('data:image'));
+    // Referência de ESTILO (stylecard): guia apenas paleta/traço, nunca o sujeito
+    const styleRef = referenceImageBase64 && referenceImageBase64.startsWith('data:image') ? referenceImageBase64 : null;
+
+    const preambles: string[] = [];
+    entityRefs.forEach(pushImage);
+    if (entityRefs.length > 0) {
+      preambles.push(
+        `The first ${entityRefs.length} reference image(s) define the EXACT identity of the subject(s): preserve faces, clothing, colors and design identically.`
+      );
     }
+    if (styleRef) {
+      pushImage(styleRef);
+      preambles.push(
+        'The last reference image defines ONLY the artistic style, color palette and rendering technique — do NOT copy its subjects, objects or composition.'
+      );
+    }
+
+    parts.push({
+      text: preambles.length > 0 ? `${preambles.join(' ')} Now generate: ${currentPrompt}` : currentPrompt
+    });
 
     return parts;
   };

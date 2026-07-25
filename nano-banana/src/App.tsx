@@ -207,8 +207,12 @@ export default function App() {
       // Generate reference sheet images for recommended entities first
       const newRefSheets = { ...entityReferenceSheets };
       if (registryToUse.entities && registryToUse.entities.length > 0) {
+        // Regenera a ficha quando não existe OU quando a descrição canônica mudou
+        // (senão a identidade antiga contaminaria os novos frames)
+        const savedDescs = (await getDbItem<Record<string, string>>('entityRefDescs')) || {};
         const recommendedEntities = registryToUse.entities.filter(
-          (e) => e.reference_image_recommended && !newRefSheets[e.id]
+          (e) => e.reference_image_recommended &&
+            (!newRefSheets[e.id] || savedDescs[e.id] !== e.canonical_description)
         );
 
         for (const entity of recommendedEntities) {
@@ -216,6 +220,7 @@ export default function App() {
             const refImageUrl = await generateEntityReference(entity, stylecard.textStyle, config.customApiKey);
             if (refImageUrl) {
               newRefSheets[entity.id] = refImageUrl;
+              savedDescs[entity.id] = entity.canonical_description;
             }
           } catch (refErr) {
             console.warn(`Failed to generate reference sheet for ${entity.id}:`, refErr);
@@ -224,6 +229,7 @@ export default function App() {
 
         setEntityReferenceSheets(newRefSheets);
         await setDbItem('entityReferenceSheets', newRefSheets);
+        await setDbItem('entityRefDescs', savedDescs);
       }
 
       // Call Pass 2 in batches to keep each Gemini request small
@@ -232,12 +238,16 @@ export default function App() {
 
       for (let i = 0; i < srtBlocks.length; i += batchSize) {
         const batch = srtBlocks.slice(i, i + batchSize);
+        // 2 blocos anteriores como contexto: mantém a janela narrativa
+        // e a continuidade de cena através das fronteiras dos lotes
+        const contextBlocks = srtBlocks.slice(Math.max(0, i - 2), i);
         const batchFrames = await parsePrompts(
           batch,
           registryToUse,
           stylecard.textStyle,
           stylecard.referenceImageBase64,
-          config.customApiKey
+          config.customApiKey,
+          contextBlocks
         );
         allFrames = [...allFrames, ...batchFrames];
       }
@@ -293,15 +303,16 @@ export default function App() {
   // Generate Single Image via API
   const processFrameItem = async (frame: GeneratedFrame): Promise<{ success: boolean; imageUrl?: string; error?: string }> => {
     try {
-      // Find relevant entity reference images for this frame
+      // Find relevant entity reference images for this frame.
+      // Cartelas nunca recebem referências de entidade (contaminariam o design tipográfico).
       const frameBlockId = Number(frame.id);
       const relevantRefImages: string[] = [];
-      
-      if (entityRegistry?.entities) {
+
+      if (!frame.isTitleCard && entityRegistry?.entities) {
         for (const entity of entityRegistry.entities) {
           const inAppears = entity.appears_in_blocks?.includes(frameBlockId);
           const inImplicit = entity.implicit_blocks?.includes(frameBlockId);
-          
+
           if (inAppears || inImplicit) {
             const refImg = entityReferenceSheets[entity.id];
             if (refImg) {
@@ -319,7 +330,9 @@ export default function App() {
         aspectRatio: stylecard.aspectRatio,
         referenceImageBase64: stylecard.referenceImageBase64,
         referenceImages: relevantRefImages,
-        model: relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
+        // Cartelas usam o modelo forte (melhor renderização de texto); cenas com
+        // referências de entidade também; demais seguem a configuração
+        model: frame.isTitleCard || relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
         apiKey: config.customApiKey
       });
 
@@ -522,7 +535,7 @@ export default function App() {
         const next = prev.map((f) => {
           // Reverte cartelas anteriores para o prompt original da Passada 2
           const reverted = f.isTitleCard
-            ? { ...f, isTitleCard: false, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined }
+            ? { ...f, isTitleCard: false, cardText: undefined, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined }
             : f;
 
           const plan = planByTarget.get(reverted.id);
@@ -531,6 +544,7 @@ export default function App() {
           return {
             ...reverted,
             isTitleCard: true,
+            cardText: plan.cardText,
             visualPrompt: plan.imagePrompt,
             videoPrompt: plan.videoPrompt,
             cameraShot: 'Title Card',
@@ -668,7 +682,7 @@ export default function App() {
         const expectedEntities = (entityRegistry?.entities || [])
           .filter((e) => e.appears_in_blocks?.includes(blockId) || e.implicit_blocks?.includes(blockId))
           .map((e) => e.canonical_description);
-        const expectedText = frame.isTitleCard ? frame.subtitleText.replace(/^CARTELA:\s*/, '') : undefined;
+        const expectedText = frame.isTitleCard ? (frame.cardText || undefined) : undefined;
 
         const qc = await inspectImageQuality({
           imageUrl: frame.imageUrl!,
@@ -689,10 +703,12 @@ export default function App() {
           logWarn(`Auto-QC frame #${frame.id}: ${issuesText}. Regenerando com correção...`);
 
           const relevantRefImages: string[] = [];
-          for (const entity of entityRegistry?.entities || []) {
-            if (entity.appears_in_blocks?.includes(blockId) || entity.implicit_blocks?.includes(blockId)) {
-              const refImg = entityReferenceSheets[entity.id];
-              if (refImg) relevantRefImages.push(refImg);
+          if (!frame.isTitleCard) {
+            for (const entity of entityRegistry?.entities || []) {
+              if (entity.appears_in_blocks?.includes(blockId) || entity.implicit_blocks?.includes(blockId)) {
+                const refImg = entityReferenceSheets[entity.id];
+                if (refImg) relevantRefImages.push(refImg);
+              }
             }
           }
 
@@ -704,7 +720,7 @@ export default function App() {
             aspectRatio: stylecard.aspectRatio,
             referenceImageBase64: stylecard.referenceImageBase64,
             referenceImages: relevantRefImages,
-            model: relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
+            model: frame.isTitleCard || relevantRefImages.length > 0 ? 'gemini-3.1-flash-image' : config.model,
             apiKey: config.customApiKey
           });
 

@@ -79,6 +79,7 @@ export interface GeneratedFrame {
   originalPrompt: string;
   videoPrompt?: string;     // Image-to-video motion prompt (Pass 3)
   isTitleCard?: boolean;    // Cartela de documentário (texto na imagem, inserida na sequência)
+  cardText?: string;        // Texto exato exibido na cartela (para QC e regeneração)
   isBroll?: boolean;        // Cutaway de B-roll inserido na sequência
   qcStatus?: 'approved' | 'fixed' | 'flagged'; // Resultado do Auto-QC visual
   qcIssues?: string;        // Problemas apontados pelo Auto-QC
