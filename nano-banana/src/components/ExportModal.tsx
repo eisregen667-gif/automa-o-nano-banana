@@ -218,6 +218,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         zip.file('TRILHA_SONORA.txt', musicBrief);
       }
 
+      // Add FONTES.txt (fontes reais consultadas pelo grounding + fatos verificados)
+      if (entityRegistry && ((entityRegistry.sources?.length || 0) > 0 || (entityRegistry.fact_sheet?.length || 0) > 0)) {
+        const lines: string[] = ['FONTES E FATOS VERIFICADOS (grounding da Passada 1)', ''];
+        if (entityRegistry.fact_sheet?.length) {
+          lines.push('== FATOS VERIFICADOS ==');
+          entityRegistry.fact_sheet.forEach((f, i) => lines.push(`${i + 1}. ${f.fact}\n   Regra visual: ${f.visual_rule}`));
+          lines.push('');
+        }
+        if (entityRegistry.sources?.length) {
+          lines.push('== FONTES CONSULTADAS ==');
+          entityRegistry.sources.forEach((s) => lines.push(`- ${s.title || s.uri}\n  ${s.uri}`));
+        }
+        zip.file('FONTES.txt', lines.join('\n'));
+      }
+
       setZipProgress(90);
 
       // Generate zip blob

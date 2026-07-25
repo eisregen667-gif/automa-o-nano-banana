@@ -17,11 +17,23 @@ export interface ColorScriptAct {
   lighting_mood: string;
 }
 
+export interface VerifiedFact {
+  fact: string;
+  visual_rule: string;
+}
+
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
 export interface EntityRegistry {
   detected_niche: string;
   detected_era?: string;
   entities: ScriptEntity[];
   color_script?: ColorScriptAct[];
+  fact_sheet?: VerifiedFact[];
+  sources?: GroundingSource[];
 }
 
 export interface EntityReferenceSheet {

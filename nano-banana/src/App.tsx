@@ -73,6 +73,7 @@ export default function App() {
   const [isGeneratingBroll, setIsGeneratingBroll] = useState<boolean>(false);
   const [isGeneratingMusic, setIsGeneratingMusic] = useState<boolean>(false);
   const [musicBrief, setMusicBrief] = useState<string | null>(null);
+  const [referenceUrls, setReferenceUrls] = useState<string>('');
   const [qcState, setQcState] = useState<{ running: boolean; paused: boolean; done: number; total: number }>({ running: false, paused: false, done: 0, total: 0 });
   const qcControlRef = useRef<{ paused: boolean; stopped: boolean }>({ paused: false, stopped: false });
   const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
@@ -136,6 +137,9 @@ export default function App() {
         const savedMusic = await getDbItem<string>('musicBrief');
         if (savedMusic) setMusicBrief(savedMusic);
 
+        const savedUrls = await getDbItem<string>('referenceUrls');
+        if (savedUrls) setReferenceUrls(savedUrls);
+
         if (savedFrames && Array.isArray(savedFrames) && savedFrames.length > 0) {
           logInfo(`Projeto anterior restaurado: ${savedFrames.length} frames carregados do navegador.`);
         } else {
@@ -183,7 +187,8 @@ export default function App() {
     try {
       setIsAnalyzingEntities(true);
 
-      const registry = await parseEntities(srtBlocks, config.customApiKey);
+      const urls = referenceUrls.split('\n').map((u) => u.trim()).filter(Boolean);
+      const registry = await parseEntities(srtBlocks, config.customApiKey, urls);
 
       setEntityRegistry(registry);
       await setDbItem('entityRegistry', registry);
@@ -912,6 +917,28 @@ export default function App() {
                   }}
                   onApplyPresetStyle={(styleText) => setStylecard((prev) => ({ ...prev, textStyle: styleText }))}
                 />
+                {/* Fontes de referência para o grounding (opcional) */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-2">
+                  <label className="text-xs font-bold text-slate-200 flex items-center justify-between">
+                    <span>🔗 Fontes de Referência (opcional — máxima precisão do grounding)</span>
+                    <span className="text-[10px] text-slate-500 font-normal">1 URL por linha, até 10</span>
+                  </label>
+                  <textarea
+                    value={referenceUrls}
+                    onChange={(e) => {
+                      setReferenceUrls(e.target.value);
+                      setDbItem('referenceUrls', e.target.value);
+                    }}
+                    rows={3}
+                    placeholder={'https://pt.wikipedia.org/wiki/...\nhttps://site-oficial.com/historia'}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                  />
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Cole links confiáveis sobre o tema (Wikipedia, sites oficiais, artigos). O Gemini lê essas páginas diretamente
+                    e as prioriza sobre a busca genérica ao verificar os fatos das entidades e do dossiê.
+                  </p>
+                </div>
+
                 {srtBlocks.length > 0 && (
                   <div className="flex justify-end">
                     <button

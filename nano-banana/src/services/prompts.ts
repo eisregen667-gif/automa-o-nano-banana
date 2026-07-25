@@ -106,6 +106,19 @@ UNIVERSAL ENTITY EXTRACTION ENGINE (DOMAIN-AGNOSTIC):
      gathering AROUND a registered sacred object; blocks about a
      journey happening ABOARD a registered ship).
 
+5-D. VERIFIED FACT SHEET (GROUNDED WORLD RULES):
+   - While researching, compile a "fact_sheet": the 10 to 25 most
+     important VERIFIED facts of the script's world that every image
+     must respect — exact dates and events, real measurements,
+     geography and landscape character, climate and vegetation,
+     architecture styles and building materials of the era/place,
+     clothing norms, technology available at the time.
+   - Each entry: { "fact": short verified statement,
+     "visual_rule": how it must appear (or be avoided) in images }.
+   - Include ONLY facts confirmed by search results or explicitly
+     stated in the script — never speculation. Prefer facts with
+     visual consequences.
+
 5-C. COLOR SCRIPT (CINEMATIC PALETTE ARC):
    - Divide the narrative into 2 to 5 ACTS following the emotional arc
      of the script (setup, development, climax, resolution).
@@ -120,6 +133,9 @@ UNIVERSAL ENTITY EXTRACTION ENGINE (DOMAIN-AGNOSTIC):
 {
   "detected_niche": "...",
   "detected_era": "...",
+  "fact_sheet": [
+    { "fact": "...", "visual_rule": "..." }
+  ],
   "color_script": [
     {
       "act_label": "...",
@@ -186,6 +202,13 @@ UNIVERSAL NICHE & GENRE CONTEXTUALIZATION ENGINE (ZERO HALLUCINATIONS):
      era otherwise. NEVER generate ethnically generic or ambiguous
      people; crowds and background figures must also match the
      population of the detected place and period.
+
+2-B. FACT SHEET LOCK (GROUNDED FACTS ARE LAW):
+   - If the ENTITY REGISTRY includes "fact_sheet", every fact is LAW
+     for every prompt: environments, props, sizes, geography, climate,
+     vegetation, architecture and technology must comply with the
+     visual_rule of every relevant fact. Never contradict a verified
+     fact, and actively use them to enrich scene detail.
 
 3. ENTITY CONSISTENCY LOCK (HIGHEST PRIORITY RULE):
    - Before writing each block's prompt, check the ENTITY REGISTRY:

@@ -69,7 +69,11 @@ function normalizeRegistry(parsed: any): EntityRegistry | null {
 /**
  * PASSADA 1: análise do roteiro e extração do registro canônico de entidades
  */
-export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Promise<EntityRegistry> {
+export async function parseEntities(
+  srtBlocks: SrtBlock[],
+  apiKey?: string,
+  referenceUrls: string[] = []
+): Promise<EntityRegistry> {
   const key = apiKey?.trim();
   if (!key || srtBlocks.length === 0) {
     if (!key) logWarn('Sem chave API do Gemini: análise de entidades pulada (modo demonstração).');
@@ -88,20 +92,50 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
     let registry: EntityRegistry | null = null;
 
     try {
-      logInfo('Passada 1: grounding com Google Search ativado — pesquisando fatos reais das entidades...');
+      const validUrls = referenceUrls.filter((u) => /^https?:\/\//i.test(u.trim())).map((u) => u.trim()).slice(0, 10);
+      logInfo(
+        validUrls.length > 0
+          ? `Passada 1: grounding ativado com Google Search + ${validUrls.length} fonte(s) de referência fornecida(s)...`
+          : 'Passada 1: grounding com Google Search ativado — pesquisando fatos reais das entidades...'
+      );
+
+      const prioritySources = validUrls.length > 0
+        ? `\n\nPRIORITY REFERENCE SOURCES (read these URLs directly and ground on them FIRST; use Google Search to fill remaining gaps):\n${validUrls.join('\n')}`
+        : '';
+
+      const tools: any[] = [{ googleSearch: {} }];
+      if (validUrls.length > 0) tools.push({ urlContext: {} });
+
       const groundedResponse = await ai.models.generateContent({
         model: GEMINI_TEXT_MODEL,
         contents: [
           {
-            text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}\n\nIMPORTANT: use Google Search to verify real-world facts for every entity that corresponds to a real artifact, place, landscape or historical subject — true geography, architecture, materials, colors, dimensions, period-accurate state — and bake those verified facts into each canonical_description so real locations and objects are recreated faithfully and recognizably. For real or historical PEOPLE, research their documented era, role and general appearance, but describe a RECREATION ACTOR: keep the role-defining traits while deliberately changing identifiable facial features (docudrama style), never the person's actual likeness. Respond with ONLY the JSON object of the required schema — no commentary, no markdown fences.`
+            text: `Abaixo está o roteiro SRT completo em formato compacto:\n\n${compactSrt}${prioritySources}\n\nIMPORTANT: use Google Search to verify real-world facts for every entity that corresponds to a real artifact, place, landscape or historical subject — true geography, architecture, materials, colors, dimensions, period-accurate state — and bake those verified facts into each canonical_description so real locations and objects are recreated faithfully and recognizably. Also compile the verified fact_sheet required by the schema. For real or historical PEOPLE, research their documented era, role and general appearance, but describe a RECREATION ACTOR: keep the role-defining traits while deliberately changing identifiable facial features (docudrama style), never the person's actual likeness. Respond with ONLY the JSON object of the required schema — no commentary, no markdown fences.`
           }
         ],
         config: {
           systemInstruction: PROMPT_ENTITY_REGISTRY,
-          tools: [{ googleSearch: {} }]
+          tools
         }
       });
       registry = normalizeRegistry(extractJsonObject(groundedResponse.text || ''));
+
+      // Captura as fontes reais consultadas pelo grounding (para auditoria)
+      if (registry) {
+        try {
+          const gm: any = (groundedResponse as any).candidates?.[0]?.groundingMetadata;
+          const chunks: any[] = gm?.groundingChunks || [];
+          const seen = new Set<string>();
+          const sources = chunks
+            .map((c: any) => ({ title: c?.web?.title || '', uri: c?.web?.uri || '' }))
+            .filter((s: any) => s.uri && !seen.has(s.uri) && seen.add(s.uri));
+          if (sources.length > 0) {
+            registry.sources = sources;
+            logInfo(`Grounding: ${sources.length} fonte(s) consultada(s) registradas (exportadas em FONTES.txt).`);
+          }
+        } catch { /* metadados de grounding são opcionais */ }
+      }
+
       if (!registry) {
         logWarn('Passada 1: resposta do grounding não veio em JSON válido. Refazendo no modo estruturado...');
       }
@@ -130,7 +164,7 @@ export async function parseEntities(srtBlocks: SrtBlock[], apiKey?: string): Pro
       return EMPTY_REGISTRY;
     }
 
-    logSuccess(`Passada 1 concluída: ${registry.entities.length} entidades detectadas (nicho: ${registry.detected_niche}${registry.detected_era ? `, era: ${registry.detected_era}` : ''}).`);
+    logSuccess(`Passada 1 concluída: ${registry.entities.length} entidades, ${registry.fact_sheet?.length || 0} fatos verificados (nicho: ${registry.detected_niche}${registry.detected_era ? `, era: ${registry.detected_era}` : ''}).`);
     return registry;
   } catch (err: any) {
     console.warn('[Nano Banana] Falha na análise de entidades (Passada 1):', err);
