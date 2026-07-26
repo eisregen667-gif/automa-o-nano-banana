@@ -614,11 +614,24 @@ export async function inspectImageQuality(params: {
   apiKey?: string;
 }): Promise<QcResult | null> {
   const key = params.apiKey?.trim();
-  if (!key || !params.imageUrl.startsWith('data:image')) return null;
+  if (!key) return null;
 
   try {
+    // Aceita object URLs (Blobs armazenados) convertendo para data URL
+    let dataUrl = params.imageUrl;
+    if (dataUrl.startsWith('blob:')) {
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result as string);
+        fr.onerror = () => reject(fr.error);
+        fr.readAsDataURL(blob);
+      });
+    }
+    if (!dataUrl.startsWith('data:image')) return null;
+
     const ai = getClient(key);
-    const headerParts = params.imageUrl.split(';');
+    const headerParts = dataUrl.split(';');
     const mimeType = headerParts[0].replace('data:', '');
     const base64Data = headerParts[1].replace('base64,', '');
 

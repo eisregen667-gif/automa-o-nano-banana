@@ -97,6 +97,16 @@ export async function urlToOptimizedBlob(imageUrl: string, maxBytes = 1048576): 
     }
   }
 
+  // Fast path: object URL (Blob armazenado) já dentro do limite
+  if (imageUrl.startsWith('blob:')) {
+    try {
+      const raw = await fetch(imageUrl).then((r) => r.blob());
+      if (raw.size <= maxBytes && (raw.type === 'image/png' || raw.type === 'image/jpeg')) {
+        return { blob: raw, ext: raw.type === 'image/jpeg' ? 'jpg' : 'png' };
+      }
+    } catch { /* cai para o caminho via canvas */ }
+  }
+
   const img = await loadImage(imageUrl);
   let width = img.naturalWidth || 1280;
   let height = img.naturalHeight || 720;

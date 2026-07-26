@@ -11,6 +11,7 @@ import {
 import { parseSrt, generateFilename, calculateDurationSeconds } from './utils/srtParser';
 import { urlToOptimizedBlob, downloadBlob } from './utils/imageExporter';
 import { getDbItem, setDbItem, clearDb } from './utils/db';
+import { persistFrameImage, loadFrameImage, deleteFrameImage, releaseImageUrl, stripImagesForPersist } from './utils/imageStore';
 import {
   parseEntities,
   parsePrompts,
@@ -125,15 +126,31 @@ export default function App() {
 
         const savedFrames = await getDbItem<GeneratedFrame[]>('frames');
         if (savedFrames && Array.isArray(savedFrames) && savedFrames.length > 0) {
-          const resetFrames = savedFrames.map((f) => 
+          const resetFrames = savedFrames.map((f) =>
             f.status === 'generating' ? { ...f, status: 'pending' as const } : f
           );
-          setFrames(resetFrames);
+
+          // Hidrata imagens dos Blobs armazenados (e migra projetos legados
+          // que ainda tinham base64 gigante dentro dos metadados)
+          const hydrated: GeneratedFrame[] = [];
+          for (const f of resetFrames) {
+            if (f.imageUrl && f.imageUrl.startsWith('data:')) {
+              const url = await persistFrameImage(f.id, f.imageUrl);
+              hydrated.push({ ...f, imageUrl: url });
+            } else if (f.status === 'completed') {
+              const url = await loadFrameImage(f.id);
+              hydrated.push(url ? { ...f, imageUrl: url } : { ...f, status: 'pending' as const, imageUrl: undefined });
+            } else {
+              hydrated.push({ ...f, imageUrl: undefined });
+            }
+          }
+
+          setFrames(hydrated);
           setQueueState((prev) => ({
             ...prev,
-            total: resetFrames.length,
-            completed: resetFrames.filter((f) => f.status === 'completed').length,
-            failed: resetFrames.filter((f) => f.status === 'failed').length
+            total: hydrated.length,
+            completed: hydrated.filter((f) => f.status === 'completed').length,
+            failed: hydrated.filter((f) => f.status === 'failed').length
           }));
         }
 
@@ -176,7 +193,7 @@ export default function App() {
   }, [entityReferenceSheets]);
 
   useEffect(() => {
-    if (frames.length > 0) setDbItem('frames', frames);
+    if (frames.length > 0) setDbItem('frames', stripImagesForPersist(frames));
   }, [frames]);
 
   useEffect(() => {
@@ -282,9 +299,15 @@ export default function App() {
           status: 'pending'
         }));
 
+        // Libera as imagens do projeto anterior (memória + armazenamento)
+        for (const oldFrame of framesRef.current) {
+          releaseImageUrl(oldFrame.imageUrl);
+          deleteFrameImage(oldFrame.id).catch(() => {});
+        }
+
         setFrames(generatedFrames);
         framesRef.current = generatedFrames;
-        await setDbItem('frames', generatedFrames);
+        await setDbItem('frames', stripImagesForPersist(generatedFrames));
 
         setQueueState((prev) => ({
           ...prev,
@@ -432,19 +455,23 @@ export default function App() {
               logError(`Frame #${item.id}: falha na geração — ${res.error || 'erro desconhecido'}.`);
             }
 
+            // Persiste como Blob (memória leve) em vez de manter base64 gigante
+            const storedUrl = res.success && res.imageUrl ? await persistFrameImage(item.id, res.imageUrl) : undefined;
+
             setFrames((prev) => {
               const next = prev.map((f) => {
                 if (f.id === item.id) {
+                  if (f.imageUrl !== storedUrl) releaseImageUrl(f.imageUrl);
                   return {
                     ...f,
                     status: res.success ? ('completed' as const) : ('failed' as const),
-                    imageUrl: res.success ? res.imageUrl : undefined,
+                    imageUrl: storedUrl,
                     error: res.error
                   };
                 }
                 return f;
               });
-              setDbItem('frames', next).catch(() => {});
+              setDbItem('frames', stripImagesForPersist(next)).catch(() => {});
               setQueueState((q) => ({
                 ...q,
                 completed: next.filter((f) => f.status === 'completed').length,
@@ -516,19 +543,22 @@ export default function App() {
       logError(`Frame #${id}: falha na regeneração — ${res.error || 'erro desconhecido'}.`);
     }
 
+    const storedUrl = res.success && res.imageUrl ? await persistFrameImage(id, res.imageUrl) : undefined;
+
     setFrames((prev) => {
       const next = prev.map((f) => {
         if (f.id === id) {
+          if (f.imageUrl !== storedUrl) releaseImageUrl(f.imageUrl);
           return {
             ...f,
             status: res.success ? ('completed' as const) : ('failed' as const),
-            imageUrl: res.success ? res.imageUrl : undefined,
+            imageUrl: storedUrl,
             error: res.error
           };
         }
         return f;
       });
-      setDbItem('frames', next);
+      setDbItem('frames', stripImagesForPersist(next));
       setQueueState((q) => ({
         ...q,
         completed: next.filter((f) => f.status === 'completed').length,
@@ -569,7 +599,7 @@ export default function App() {
         const next = prev.map((f) => {
           // Reverte cartelas anteriores para o prompt original da Passada 2
           const reverted = f.isTitleCard
-            ? { ...f, isTitleCard: false, cardText: undefined, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined }
+            ? (releaseImageUrl(f.imageUrl), { ...f, isTitleCard: false, cardText: undefined, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined })
             : f;
 
           const plan = planByTarget.get(reverted.id);
@@ -588,7 +618,7 @@ export default function App() {
             error: undefined
           };
         });
-        setDbItem('frames', next);
+        setDbItem('frames', stripImagesForPersist(next));
         setQueueState((q) => ({
           ...q,
           total: next.length,
@@ -638,7 +668,7 @@ export default function App() {
         const next = prev.map((f) => {
           // Reverte B-rolls anteriores para o prompt original da Passada 2
           const reverted = f.isBroll
-            ? { ...f, isBroll: false, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined }
+            ? (releaseImageUrl(f.imageUrl), { ...f, isBroll: false, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined })
             : f;
 
           const plan = planByTarget.get(reverted.id);
@@ -657,7 +687,7 @@ export default function App() {
             error: undefined
           };
         });
-        setDbItem('frames', next);
+        setDbItem('frames', stripImagesForPersist(next));
         setQueueState((q) => ({
           ...q,
           total: next.length,
@@ -678,7 +708,7 @@ export default function App() {
 
   // AUTO-QC: inspect every completed image with Gemini vision and auto-fix defects
   const handleAutoQC = async () => {
-    const targets = framesRef.current.filter((f) => f.status === 'completed' && f.imageUrl?.startsWith('data:image'));
+    const targets = framesRef.current.filter((f) => f.status === 'completed' && (f.imageUrl?.startsWith('data:image') || f.imageUrl?.startsWith('blob:')));
     if (targets.length === 0 || qcState.running) return;
     if (!config.customApiKey?.trim()) {
       logWarn('Auto-QC requer a chave API do Gemini (Configurações).');
@@ -695,10 +725,12 @@ export default function App() {
 
     const applyQc = (id: number, qcStatus: GeneratedFrame['qcStatus'], qcIssues?: string, newImageUrl?: string) => {
       setFrames((prev) => {
-        const next = prev.map((f) =>
-          f.id === id ? { ...f, qcStatus, qcIssues, ...(newImageUrl ? { imageUrl: newImageUrl } : {}) } : f
-        );
-        setDbItem('frames', next).catch(() => {});
+        const next = prev.map((f) => {
+          if (f.id !== id) return f;
+          if (newImageUrl && f.imageUrl !== newImageUrl) releaseImageUrl(f.imageUrl);
+          return { ...f, qcStatus, qcIssues, ...(newImageUrl ? { imageUrl: newImageUrl } : {}) };
+        });
+        setDbItem('frames', stripImagesForPersist(next)).catch(() => {});
         return next;
       });
     };
@@ -760,7 +792,8 @@ export default function App() {
 
           if (res.success && res.imageUrl && !res.isFallback) {
             fixedCount++;
-            applyQc(frame.id, 'fixed', issuesText, res.imageUrl);
+            const storedUrl = await persistFrameImage(frame.id, res.imageUrl);
+            applyQc(frame.id, 'fixed', issuesText, storedUrl);
             logSuccess(`Auto-QC frame #${frame.id}: imagem corrigida e substituída.`);
           } else {
             flaggedCount++;
@@ -861,7 +894,7 @@ export default function App() {
 
       setFrames((prev) => {
         const next = prev.map((f) => (promptMap[f.id] ? { ...f, videoPrompt: promptMap[f.id] } : f));
-        setDbItem('frames', next);
+        setDbItem('frames', stripImagesForPersist(next));
         return next;
       });
 
@@ -877,7 +910,7 @@ export default function App() {
   const handleUpdateFramePrompt = (id: number, newPrompt: string) => {
     setFrames((prev) => {
       const next = prev.map((f) => (f.id === id ? { ...f, visualPrompt: newPrompt } : f));
-      setDbItem('frames', next);
+      setDbItem('frames', stripImagesForPersist(next));
       return next;
     });
   };
