@@ -85,7 +85,7 @@ export default function App() {
   const [qcState, setQcState] = useState<{ running: boolean; paused: boolean; done: number; total: number }>({ running: false, paused: false, done: 0, total: 0 });
   const qcControlRef = useRef<{ paused: boolean; stopped: boolean }>({ paused: false, stopped: false });
   const [showAnimatic, setShowAnimatic] = useState<boolean>(false);
-  const [view, setView] = useState<AppView>('roteiro');
+  const [view, setView] = useState<AppView>('narracao');
 
   const [queueState, setQueueState] = useState<QueueProgressState>({
     total: 0,
@@ -999,9 +999,9 @@ export default function App() {
             {view === 'roteiro' && (
               <>
                 <div>
-                  <h2 className="text-xl font-extrabold text-white">Roteiro</h2>
+                  <h2 className="text-xl font-extrabold text-white">Roteiro (SRT)</h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Carregue ou cole o arquivo SRT do seu documentário — cada bloco de legenda vira uma cena.
+                    Carregue o SRT gerado a partir do NARRACAO.wav — o timing de cada bloco (que veio da voz) dita a duração de cada cena.
                   </p>
                 </div>
                 <SrtInputSection
@@ -1111,7 +1111,6 @@ export default function App() {
                   onVideoPrompts={handleGenerateVideoPrompts}
                   onPreview={() => setShowAnimatic(true)}
                   onExport={() => setActiveModal('export')}
-                  onOpenNarration={() => setView('narracao')}
                   autoPasses={autoPasses}
                   onToggleAutoPass={(key) => {
                     setAutoPasses((prev) => {
@@ -1128,19 +1127,23 @@ export default function App() {
               <>
                 <div>
                   <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-                    🎙 Narração (Gemini TTS)
+                    🎙 Narração (Gemini TTS) — o ponto de partida
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Gere a voz do documentário: 30 vozes profissionais, saneamento do texto e download do WAV completo.
+                    Cole o roteiro, dirija a sessão e baixe o NARRACAO.wav. É do áudio que nasce o SRT
+                    (gere as legendas na sua ferramenta) — e o SRT dita o timing de todas as imagens.
                   </p>
                 </div>
                 <NarrationView apiKey={config.customApiKey} srtBlocks={srtBlocks} entityRegistry={entityRegistry} />
-                <div className="flex justify-end">
+                <div className="flex items-center justify-end gap-3">
+                  <span className="text-[11px] text-slate-500">
+                    Gerou o WAV? Crie o SRT a partir dele (CapCut/legendador) e carregue na próxima etapa.
+                  </span>
                   <button
-                    onClick={() => setActiveModal('export')}
+                    onClick={() => setView('roteiro')}
                     className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
                   >
-                    Finalizar → Exportar Pacote
+                    Continuar → Roteiro (SRT)
                   </button>
                 </div>
               </>
@@ -1200,10 +1203,10 @@ export default function App() {
                 {queueState.completed > 0 && (
                   <div className="flex justify-end">
                     <button
-                      onClick={() => setView('narracao')}
+                      onClick={() => setActiveModal('export')}
                       className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
                     >
-                      Continuar → Narração
+                      Finalizar → Exportar Pacote
                     </button>
                   </div>
                 )}

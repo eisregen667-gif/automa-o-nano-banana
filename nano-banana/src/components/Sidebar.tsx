@@ -29,11 +29,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const progressPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   const navItems: { id: AppView; icon: React.ReactNode; label: string; badge?: string }[] = [
-    { id: 'roteiro', icon: <FileText className="w-4 h-4" />, label: '1. Roteiro', badge: blocks > 0 ? `${blocks}` : undefined },
-    { id: 'estilo', icon: <Palette className="w-4 h-4" />, label: '2. Estilo Visual' },
-    { id: 'producao', icon: <Clapperboard className="w-4 h-4" />, label: '3. Produção' },
-    { id: 'galeria', icon: <Images className="w-4 h-4" />, label: '4. Galeria', badge: total > 0 ? `${completed}/${total}` : undefined },
-    { id: 'narracao', icon: <Mic className="w-4 h-4" />, label: '5. Narração' },
+    { id: 'narracao', icon: <Mic className="w-4 h-4" />, label: '1. Narração' },
+    { id: 'roteiro', icon: <FileText className="w-4 h-4" />, label: '2. Roteiro (SRT)', badge: blocks > 0 ? `${blocks}` : undefined },
+    { id: 'estilo', icon: <Palette className="w-4 h-4" />, label: '3. Estilo Visual' },
+    { id: 'producao', icon: <Clapperboard className="w-4 h-4" />, label: '4. Produção' },
+    { id: 'galeria', icon: <Images className="w-4 h-4" />, label: '5. Galeria', badge: total > 0 ? `${completed}/${total}` : undefined },
   ];
 
   return (
