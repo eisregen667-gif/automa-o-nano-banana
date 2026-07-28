@@ -246,42 +246,54 @@ export default function App() {
             (!newRefSheets[e.id] || savedDescs[e.id] !== e.canonical_description)
         );
 
-        for (const entity of recommendedEntities) {
-          try {
-            const refImageUrl = await generateEntityReference(entity, stylecard.textStyle, config.customApiKey);
-            if (refImageUrl) {
-              newRefSheets[entity.id] = refImageUrl;
-              savedDescs[entity.id] = entity.canonical_description;
+        // Fichas geradas em paralelo (são independentes entre si)
+        await Promise.all(
+          recommendedEntities.map(async (entity) => {
+            try {
+              const refImageUrl = await generateEntityReference(entity, stylecard.textStyle, config.customApiKey);
+              if (refImageUrl) {
+                newRefSheets[entity.id] = refImageUrl;
+                savedDescs[entity.id] = entity.canonical_description;
+              }
+            } catch (refErr) {
+              console.warn(`Failed to generate reference sheet for ${entity.id}:`, refErr);
             }
-          } catch (refErr) {
-            console.warn(`Failed to generate reference sheet for ${entity.id}:`, refErr);
-          }
-        }
+          })
+        );
 
         setEntityReferenceSheets(newRefSheets);
         await setDbItem('entityReferenceSheets', newRefSheets);
         await setDbItem('entityRefDescs', savedDescs);
       }
 
-      // Call Pass 2 in batches to keep each Gemini request small
+      // Pass 2 em lotes PARALELOS (3 agentes): os lotes são independentes
+      // entre si — o contexto de continuidade vem do próprio SRT
       const batchSize = 10;
-      let allFrames: any[] = [];
-
+      const batchDefs: { batch: SrtBlock[]; context: SrtBlock[] }[] = [];
       for (let i = 0; i < srtBlocks.length; i += batchSize) {
-        const batch = srtBlocks.slice(i, i + batchSize);
-        // 2 blocos anteriores como contexto: mantém a janela narrativa
-        // e a continuidade de cena através das fronteiras dos lotes
-        const contextBlocks = srtBlocks.slice(Math.max(0, i - 2), i);
-        const batchFrames = await parsePrompts(
-          batch,
-          registryToUse,
-          stylecard.textStyle,
-          stylecard.referenceImageBase64,
-          config.customApiKey,
-          contextBlocks
-        );
-        allFrames = [...allFrames, ...batchFrames];
+        batchDefs.push({
+          batch: srtBlocks.slice(i, i + batchSize),
+          context: srtBlocks.slice(Math.max(0, i - 2), i)
+        });
       }
+
+      const batchResults: any[][] = new Array(batchDefs.length);
+      let batchCursor = 0;
+      const promptWorker = async () => {
+        while (batchCursor < batchDefs.length) {
+          const my = batchCursor++;
+          batchResults[my] = await parsePrompts(
+            batchDefs[my].batch,
+            registryToUse,
+            stylecard.textStyle,
+            stylecard.referenceImageBase64,
+            config.customApiKey,
+            batchDefs[my].context
+          );
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, batchDefs.length) }, () => promptWorker()));
+      const allFrames: any[] = batchResults.flat();
 
       logSuccess(`Passada 2 concluída: ${allFrames.length} prompts visuais gerados.`);
 
@@ -318,23 +330,25 @@ export default function App() {
           isPaused: false
         }));
 
-        // Passadas automáticas selecionadas (encadeadas na ordem certa)
+        // Passadas automáticas: cartelas→b-roll em série (evita conflito de
+        // blocos), trilha em paralelo com elas; prompts de vídeo por último
         const flush = () => new Promise((r) => setTimeout(r, 80));
-        if (autoPasses.cards) {
-          await flush();
-          await handleGenerateTitleCards();
-        }
-        if (autoPasses.broll) {
-          await flush();
-          await handleGenerateBroll();
-        }
+        const visualChain = (async () => {
+          if (autoPasses.cards) {
+            await flush();
+            await handleGenerateTitleCards();
+          }
+          if (autoPasses.broll) {
+            await flush();
+            await handleGenerateBroll();
+          }
+        })();
+        const musicChain = autoPasses.music ? handleGenerateMusic(false) : Promise.resolve();
+        await Promise.all([visualChain, musicChain]);
+
         if (autoPasses.video) {
           await flush();
           await handleGenerateVideoPrompts();
-        }
-        if (autoPasses.music) {
-          await flush();
-          await handleGenerateMusic(false);
         }
 
         setActiveModal('promptMatrix');
@@ -426,62 +440,64 @@ export default function App() {
     }
 
     const concurrency = queueStateRef.current.concurrency || 4;
-    logInfo(`Fila iniciada: ${pendingFrames.length} imagens para gerar (lotes de ${concurrency}).`);
+    logInfo(`Fila iniciada: ${pendingFrames.length} imagens para gerar (${concurrency} agentes em paralelo).`);
+
+    // Pool de workers: cada agente puxa o próximo frame pendente — uma imagem
+    // lenta não trava mais o lote inteiro
+    const runOne = async (item: GeneratedFrame) => {
+      setFrames((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: 'generating' as const } : f)));
+
+      const res = await processFrameItem(item);
+
+      if (res.success) {
+        logSuccess(`Frame #${item.id}: imagem gerada com sucesso.`);
+      } else {
+        logError(`Frame #${item.id}: falha na geração — ${res.error || 'erro desconhecido'}.`);
+      }
+
+      // Persiste como Blob (memória leve) em vez de manter base64 gigante
+      const storedUrl = res.success && res.imageUrl ? await persistFrameImage(item.id, res.imageUrl) : undefined;
+
+      setFrames((prev) => {
+        const next = prev.map((f) => {
+          if (f.id === item.id) {
+            if (f.imageUrl !== storedUrl) releaseImageUrl(f.imageUrl);
+            return {
+              ...f,
+              status: res.success ? ('completed' as const) : ('failed' as const),
+              imageUrl: storedUrl,
+              error: res.error
+            };
+          }
+          return f;
+        });
+        setDbItem('frames', stripImagesForPersist(next)).catch(() => {});
+        setQueueState((q) => ({
+          ...q,
+          completed: next.filter((f) => f.status === 'completed').length,
+          failed: next.filter((f) => f.status === 'failed').length
+        }));
+        return next;
+      });
+    };
 
     try {
-      for (let i = 0; i < pendingFrames.length; i += concurrency) {
-        if (!isProcessingRef.current) break;
-
-        while (isPausedRef.current) {
-          await new Promise((r) => setTimeout(r, 500));
+      let cursor = 0;
+      const worker = async () => {
+        while (isProcessingRef.current) {
+          while (isPausedRef.current && isProcessingRef.current) {
+            await new Promise((r) => setTimeout(r, 500));
+          }
           if (!isProcessingRef.current) break;
+          const i = cursor++;
+          if (i >= pendingFrames.length) break;
+          await runOne(pendingFrames[i]);
         }
+      };
 
-        const chunk = pendingFrames.slice(i, i + concurrency);
-
-        setFrames((prev) =>
-          prev.map((item) =>
-            chunk.some((c) => c.id === item.id) ? { ...item, status: 'generating' } : item
-          )
-        );
-
-        await Promise.all(
-          chunk.map(async (item) => {
-            const res = await processFrameItem(item);
-
-            if (res.success) {
-              logSuccess(`Frame #${item.id}: imagem gerada com sucesso.`);
-            } else {
-              logError(`Frame #${item.id}: falha na geração — ${res.error || 'erro desconhecido'}.`);
-            }
-
-            // Persiste como Blob (memória leve) em vez de manter base64 gigante
-            const storedUrl = res.success && res.imageUrl ? await persistFrameImage(item.id, res.imageUrl) : undefined;
-
-            setFrames((prev) => {
-              const next = prev.map((f) => {
-                if (f.id === item.id) {
-                  if (f.imageUrl !== storedUrl) releaseImageUrl(f.imageUrl);
-                  return {
-                    ...f,
-                    status: res.success ? ('completed' as const) : ('failed' as const),
-                    imageUrl: storedUrl,
-                    error: res.error
-                  };
-                }
-                return f;
-              });
-              setDbItem('frames', stripImagesForPersist(next)).catch(() => {});
-              setQueueState((q) => ({
-                ...q,
-                completed: next.filter((f) => f.status === 'completed').length,
-                failed: next.filter((f) => f.status === 'failed').length
-              }));
-              return next;
-            });
-          })
-        );
-      }
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, pendingFrames.length) }, () => worker())
+      );
     } catch (error: any) {
       console.error('Queue processing error:', error);
       logError(`Erro no processamento da fila: ${error?.message || error}`);
@@ -735,14 +751,17 @@ export default function App() {
       });
     };
 
-    for (const frame of targets) {
+    // 2 inspetores em paralelo puxando frames da mesma fila
+    let qcCursor = 0;
+    const qcWorker = async () => {
+      while (true) {
       while (qcControlRef.current.paused && !qcControlRef.current.stopped) {
         await new Promise((r) => setTimeout(r, 500));
       }
-      if (qcControlRef.current.stopped) {
-        logWarn('Auto-QC interrompido pelo usuário.');
-        break;
-      }
+      if (qcControlRef.current.stopped) break;
+      const qcIndex = qcCursor++;
+      if (qcIndex >= targets.length) break;
+      const frame = targets[qcIndex];
       try {
         const blockId = Number(frame.id);
         const expectedEntities = (entityRegistry?.entities || [])
@@ -805,7 +824,10 @@ export default function App() {
         console.warn(`Auto-QC error on frame ${frame.id}:`, err);
       }
       setQcState((s) => ({ ...s, done: s.done + 1 }));
-    }
+      }
+    };
+    await Promise.all([qcWorker(), qcWorker()]);
+    if (qcControlRef.current.stopped) logWarn('Auto-QC interrompido pelo usuário.');
 
     logSuccess(`Auto-QC ${qcControlRef.current.stopped ? 'interrompido' : 'concluído'}: ${approvedCount} aprovadas, ${fixedCount} corrigidas automaticamente, ${flaggedCount} sinalizadas para revisão.`);
     setQcState((s) => ({ ...s, running: false, paused: false }));
@@ -885,12 +907,22 @@ export default function App() {
         durationSeconds: calculateDurationSeconds(f.timeStart, f.timeEnd)
       }));
 
+      // Lotes paralelos (3 agentes) — o mapa final é indexado por id
       const batchSize = 20;
-      const promptMap: Record<number, string> = {};
+      const videoBatches: (typeof items)[] = [];
       for (let i = 0; i < items.length; i += batchSize) {
-        const batchResult = await generateVideoPrompts(items.slice(i, i + batchSize), config.customApiKey);
-        Object.assign(promptMap, batchResult);
+        videoBatches.push(items.slice(i, i + batchSize));
       }
+      const promptMap: Record<number, string> = {};
+      let vCursor = 0;
+      const videoWorker = async () => {
+        while (vCursor < videoBatches.length) {
+          const my = vCursor++;
+          const batchResult = await generateVideoPrompts(videoBatches[my], config.customApiKey);
+          Object.assign(promptMap, batchResult);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, videoBatches.length) }, () => videoWorker()));
 
       setFrames((prev) => {
         const next = prev.map((f) => (promptMap[f.id] ? { ...f, videoPrompt: promptMap[f.id] } : f));

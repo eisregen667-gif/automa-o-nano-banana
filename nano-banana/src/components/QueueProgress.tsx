@@ -64,7 +64,7 @@ export const QueueProgress: React.FC<QueueProgressProps> = ({
           {/* Concurrency Selector */}
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
             <span className="text-[10px] font-semibold text-slate-400 px-1.5">Lote:</span>
-            {[1, 2, 4].map((num) => (
+            {[1, 2, 4, 6, 8].map((num) => (
               <button
                 key={num}
                 onClick={() => onChangeConcurrency(num)}
