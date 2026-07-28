@@ -1111,6 +1111,7 @@ export default function App() {
                   onVideoPrompts={handleGenerateVideoPrompts}
                   onPreview={() => setShowAnimatic(true)}
                   onExport={() => setActiveModal('export')}
+                  onOpenNarration={() => setView('narracao')}
                   autoPasses={autoPasses}
                   onToggleAutoPass={(key) => {
                     setAutoPasses((prev) => {
@@ -1134,6 +1135,14 @@ export default function App() {
                   </p>
                 </div>
                 <NarrationView apiKey={config.customApiKey} srtBlocks={srtBlocks} entityRegistry={entityRegistry} />
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setActiveModal('export')}
+                    className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Finalizar → Exportar Pacote
+                  </button>
+                </div>
               </>
             )}
 
@@ -1187,6 +1196,17 @@ export default function App() {
                   onUpdateFramePrompt={handleUpdateFramePrompt}
                   onDownloadSingle={handleDownloadSingle}
                 />
+
+                {queueState.completed > 0 && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => setView('narracao')}
+                      className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Continuar → Narração
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

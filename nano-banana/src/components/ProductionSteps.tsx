@@ -35,6 +35,7 @@ interface ProductionStepsProps {
   onVideoPrompts: () => void;
   onPreview: () => void;
   onExport: () => void;
+  onOpenNarration: () => void;
   autoPasses: { cards: boolean; broll: boolean; video: boolean; music: boolean };
   onToggleAutoPass: (key: 'cards' | 'broll' | 'video' | 'music') => void;
 }
@@ -237,6 +238,17 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
 
       <StepRow
         num={5}
+        state={p.hasScript ? 'ready' : 'locked'}
+        title="Narração (Voz)"
+        description="Sessão de estúdio na aba Narração: o Diretor divide por emoção, dirige cada trecho e monta o WAV com pausas reais."
+      >
+        <Btn onClick={p.onOpenNarration} disabled={!p.hasScript} variant="secondary">
+          🎙 Abrir Narração
+        </Btn>
+      </StepRow>
+
+      <StepRow
+        num={6}
         state={s5}
         title="Revisar & Exportar"
         description="Assista o animatic com o timing real do SRT e baixe o pacote completo de produção."

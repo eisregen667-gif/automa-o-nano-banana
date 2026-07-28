@@ -258,7 +258,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-amber-400" /> Texto da Narração
+            <FileText className="w-4 h-4 text-amber-400" /> 1. Texto da Narração
             <span className="text-[10px] text-slate-500 font-normal">{script.length} caracteres</span>
           </label>
           <div className="flex items-center gap-2">
@@ -296,6 +296,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
 
       {/* Configurações de voz */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <p className="text-xs font-bold text-slate-200">🎛 2. Voz &amp; Sessão de Estúdio</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="text-[11px] font-bold text-slate-300 block mb-1.5">Modelo TTS</label>
@@ -385,6 +386,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
       {/* Chunks */}
       {chunks.length > 0 && (
         <div className="space-y-2">
+          <p className="text-xs font-bold text-slate-200 pt-1">🎚 3. Trechos da Gravação ({chunks.length})</p>
           {chunks.map((chunk, i) => (
             <div key={i} className={`bg-slate-900/80 border rounded-xl p-3.5 space-y-2 ${
               chunk.status === 'done' ? 'border-emerald-800/60' : chunk.status === 'error' ? 'border-rose-800/60' : chunk.status === 'generating' ? 'border-amber-400/50' : 'border-slate-800'
