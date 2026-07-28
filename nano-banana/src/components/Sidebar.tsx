@@ -1,7 +1,7 @@
 import React from 'react';
-import { FileText, Palette, Clapperboard, Images, Settings, Download, Power } from 'lucide-react';
+import { FileText, Palette, Clapperboard, Images, Mic, Settings, Download, Power } from 'lucide-react';
 
-export type AppView = 'roteiro' | 'estilo' | 'producao' | 'galeria';
+export type AppView = 'roteiro' | 'estilo' | 'producao' | 'galeria' | 'narracao';
 
 interface SidebarProps {
   view: AppView;
@@ -33,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'estilo', icon: <Palette className="w-4 h-4" />, label: 'Estilo Visual' },
     { id: 'producao', icon: <Clapperboard className="w-4 h-4" />, label: 'Produção' },
     { id: 'galeria', icon: <Images className="w-4 h-4" />, label: 'Galeria', badge: total > 0 ? `${completed}/${total}` : undefined },
+    { id: 'narracao', icon: <Mic className="w-4 h-4" />, label: 'Narração' },
   ];
 
   return (

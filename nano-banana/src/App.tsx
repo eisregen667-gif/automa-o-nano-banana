@@ -24,6 +24,7 @@ import {
   inspectImageQuality
 } from './services/geminiClient';
 import { AnimaticPlayer } from './components/AnimaticPlayer';
+import { NarrationView } from './components/NarrationView';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
 import { ActivityLog } from './components/ActivityLog';
 import { SAMPLE_SRT_PRESETS } from './data/sampleSrt';
@@ -1119,6 +1120,20 @@ export default function App() {
                     });
                   }}
                 />
+              </>
+            )}
+
+            {view === 'narracao' && (
+              <>
+                <div>
+                  <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
+                    🎙 Narração (Gemini TTS)
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Gere a voz do documentário: 30 vozes profissionais, saneamento do texto e download do WAV completo.
+                  </p>
+                </div>
+                <NarrationView apiKey={config.customApiKey} srtBlocks={srtBlocks} />
               </>
             )}
 
