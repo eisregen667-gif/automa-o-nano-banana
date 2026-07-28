@@ -15,17 +15,22 @@ import {
   buildTtsChunks,
   TtsLintIssue
 } from '../services/geminiTts';
-import { Mic, Play, Square, Download, RefreshCw, Wand2, FileText, Loader2 } from 'lucide-react';
+import { directNarration } from '../services/geminiClient';
+import { EntityRegistry } from '../types';
+import { Mic, Square, Download, RefreshCw, Wand2, FileText, Loader2, Clapperboard } from 'lucide-react';
 
 interface NarrationViewProps {
   apiKey?: string;
   srtBlocks: SrtBlock[];
+  entityRegistry?: EntityRegistry | null;
 }
 
 interface TtsChunk {
   text: string;
   status: 'idle' | 'generating' | 'done' | 'error';
   error?: string;
+  direction?: string;      // modulação emocional do trecho (Diretor de Narração)
+  pauseBeforeMs?: number;  // silêncio real inserido antes do trecho no WAV final
 }
 
 interface TtsProjectMeta {
@@ -38,7 +43,7 @@ interface TtsProjectMeta {
   chunks: TtsChunk[];
 }
 
-export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks }) => {
+export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks, entityRegistry }) => {
   const [script, setScript] = useState('');
   const [voice, setVoice] = useState('Charon');
   const [model, setModel] = useState<TtsModel>('gemini-2.5-flash-preview-tts');
@@ -49,6 +54,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
   const [audioUrls, setAudioUrls] = useState<Record<number, string>>({});
   const [lint, setLint] = useState<TtsLintIssue[]>([]);
   const [running, setRunning] = useState(false);
+  const [directing, setDirecting] = useState(false);
   const stopRef = useRef(false);
   const chunksRef = useRef(chunks);
   chunksRef.current = chunks;
@@ -126,6 +132,43 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
     logInfo(`Narração: roteiro dividido em ${built.length} chunk(s) de até ${chunkSize} caracteres.`);
   };
 
+  // Diretor de Narração: segmentos por emoção + direção + pausas reais (revisáveis)
+  const handleDirect = async () => {
+    if (!script.trim() || directing) return;
+    setDirecting(true);
+    try {
+      const plan = await directNarration(script, entityRegistry || null, style, chunkSize, apiKey);
+      if (plan) {
+        const built: TtsChunk[] = plan.map((p) => ({
+          text: p.performanceText,
+          direction: p.direction,
+          pauseBeforeMs: p.pauseBeforeMs,
+          status: 'idle' as const
+        }));
+        setChunks(built);
+        chunksRef.current = built;
+        setAudioUrls((prev) => {
+          Object.values(prev).forEach((u) => URL.revokeObjectURL(String(u)));
+          return {};
+        });
+        built.forEach((_, i) => removeDbItem(`tts:${i}`).catch(() => {}));
+        setLint(lintScriptForTts(script));
+        persistMeta({ chunks: built });
+      }
+    } finally {
+      setDirecting(false);
+    }
+  };
+
+  const updateChunk = (index: number, patch: Partial<TtsChunk>) => {
+    setChunks((prev) => {
+      const next = prev.map((c, i) => (i === index ? { ...c, ...patch } : c));
+      chunksRef.current = next;
+      return next;
+    });
+    persistMeta();
+  };
+
   const generateOne = async (index: number): Promise<boolean> => {
     const chunk = chunksRef.current[index];
     if (!chunk || !apiKey?.trim()) return false;
@@ -140,7 +183,10 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
 
     update({ status: 'generating', error: undefined });
     try {
-      const pcmB64 = await generateTtsChunk(chunk.text, voice, model, apiKey.trim(), style);
+      const fullDirection = chunk.direction
+        ? `${style}\n\nDireção deste trecho: ${chunk.direction}`
+        : style;
+      const pcmB64 = await generateTtsChunk(chunk.text, voice, model, apiKey.trim(), fullDirection);
       await setDbItem(`tts:${index}`, pcmB64ToRawBlob(pcmB64));
       const url = URL.createObjectURL(pcmB64ToWavBlob(pcmB64));
       setAudioUrls((prev) => {
@@ -193,13 +239,13 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
     const doneCount = chunksRef.current.filter((c) => c.status === 'done').length;
     if (doneCount === 0) return;
     logInfo('Narração: montando o WAV completo...');
-    const blobs: Blob[] = [];
+    const items: { pcm: Blob; pauseBeforeMs?: number }[] = [];
     for (let i = 0; i < chunksRef.current.length; i++) {
       if (chunksRef.current[i].status !== 'done') continue;
       const pcm = await getDbItem<Blob>(`tts:${i}`);
-      if (pcm instanceof Blob) blobs.push(pcm);
+      if (pcm instanceof Blob) items.push({ pcm, pauseBeforeMs: chunksRef.current[i].pauseBeforeMs });
     }
-    const wav = await mergePcmBlobsToWav(blobs);
+    const wav = await mergePcmBlobsToWav(items);
     downloadBlob(wav, 'NARRACAO.wav');
     logSuccess(`Narração completa baixada (${(wav.size / 1048576).toFixed(1)} MB).`);
   };
@@ -276,7 +322,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
         </div>
 
         <div>
-          <label className="text-[11px] font-bold text-slate-300 block mb-1.5">Direção de estilo (como o narrador deve ler)</label>
+          <label className="text-[11px] font-bold text-slate-300 block mb-1.5">Identidade do narrador (fixa — vale para toda a narração; a emoção por trecho vem do Diretor)</label>
           <input value={style} onChange={(e) => { setStyle(e.target.value); persistMeta({ style: e.target.value }); }}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none" />
         </div>
@@ -297,9 +343,16 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
         </div>
 
         <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-slate-800">
+          <button onClick={handleDirect} disabled={!script || running || directing}
+            className="px-4 py-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/25 text-violet-300 border border-violet-500/40 text-xs font-bold transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            title="O Gemini divide o roteiro por emoção, escreve a direção de cada trecho, marca a pontuação de performance e planeja as pausas reais — tudo revisável antes de gravar">
+            {directing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clapperboard className="w-3.5 h-3.5" />}
+            {directing ? 'Dirigindo sessão...' : 'Dirigir Narração (recomendado)'}
+          </button>
           <button onClick={handleBuildChunks} disabled={!script || running}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-colors disabled:opacity-40">
-            ✂ Dividir em Chunks
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition-colors disabled:opacity-40"
+            title="Divisão simples por tamanho, sem direção emocional">
+            ✂ Divisão simples
           </button>
           {!running ? (
             <button onClick={handleGenerateAll} disabled={chunks.length === 0}
@@ -321,6 +374,14 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
         </div>
       </div>
 
+      {/* Banner de revisão da sessão dirigida */}
+      {chunks.length > 0 && chunks.some((c) => c.direction !== undefined) && doneCount === 0 && !running && (
+        <div className="bg-violet-950/30 border border-violet-500/30 rounded-xl px-4 py-3 text-xs text-violet-200">
+          🎬 <strong>Sessão dirigida — revise antes de gravar:</strong> ajuste a direção emocional, as pausas (ms) e o texto de
+          performance de cada trecho abaixo. Quando estiver satisfeito, clique em <strong>Gerar Narração</strong>.
+        </div>
+      )}
+
       {/* Chunks */}
       {chunks.length > 0 && (
         <div className="space-y-2">
@@ -341,7 +402,35 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks 
                   <RefreshCw className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-[11px] text-slate-500 italic leading-snug line-clamp-2">{chunk.text}</p>
+              {chunk.direction !== undefined && (
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-2">
+                  <input
+                    value={chunk.direction}
+                    onChange={(e) => updateChunk(i, { direction: e.target.value })}
+                    placeholder="Direção emocional deste trecho"
+                    className="w-full bg-slate-950 border border-violet-500/30 focus:border-violet-400 rounded-lg px-2.5 py-1.5 text-[11px] text-violet-200 focus:outline-none"
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      max={3000}
+                      step={100}
+                      value={chunk.pauseBeforeMs ?? 0}
+                      onChange={(e) => updateChunk(i, { pauseBeforeMs: Math.max(0, Number(e.target.value) || 0) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-[11px] text-slate-200 focus:outline-none"
+                      title="Silêncio real antes deste trecho (ms)"
+                    />
+                    <span className="text-[10px] text-slate-500 whitespace-nowrap">ms antes</span>
+                  </div>
+                </div>
+              )}
+              <textarea
+                value={chunk.text}
+                onChange={(e) => updateChunk(i, { text: e.target.value })}
+                rows={3}
+                className="w-full bg-slate-950 border border-slate-800 focus:border-amber-400/50 rounded-lg p-2 text-[11px] text-slate-300 leading-relaxed focus:outline-none resize-y"
+              />
               {chunk.error && <p className="text-[11px] text-rose-400 bg-rose-950/40 border border-rose-800/60 rounded-lg px-2.5 py-1.5">{chunk.error}</p>}
               {audioUrls[i] && <audio controls src={audioUrls[i]} className="w-full h-8" />}
             </div>

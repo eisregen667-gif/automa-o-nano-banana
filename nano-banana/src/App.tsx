@@ -1133,7 +1133,7 @@ export default function App() {
                     Gere a voz do documentário: 30 vozes profissionais, saneamento do texto e download do WAV completo.
                   </p>
                 </div>
-                <NarrationView apiKey={config.customApiKey} srtBlocks={srtBlocks} />
+                <NarrationView apiKey={config.customApiKey} srtBlocks={srtBlocks} entityRegistry={entityRegistry} />
               </>
             )}
 

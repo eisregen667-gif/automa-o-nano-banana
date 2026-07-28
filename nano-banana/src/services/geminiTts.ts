@@ -81,16 +81,39 @@ export function pcmB64ToWavBlob(pcmB64: string): Blob {
   return new Blob([out], { type: 'audio/wav' });
 }
 
-/** Junta vários Blobs de PCM cru em um único WAV (narração completa) */
-export async function mergePcmBlobsToWav(pcmBlobs: Blob[]): Promise<Blob> {
-  const buffers = await Promise.all(pcmBlobs.map((b) => b.arrayBuffer()));
-  const totalLen = buffers.reduce((s, b) => s + b.byteLength, 0);
+export interface MergeItem {
+  pcm: Blob;
+  pauseBeforeMs?: number;
+}
+
+/**
+ * Junta os segmentos de PCM em um único WAV, inserindo SILÊNCIO REAL
+ * (pauseBeforeMs) antes de cada segmento — pausas dramáticas exatas.
+ */
+export async function mergePcmBlobsToWav(items: MergeItem[]): Promise<Blob> {
+  const SAMPLE_RATE = 24000;
+  const parts: Uint8Array[] = [];
+  let totalLen = 0;
+
+  for (const item of items) {
+    const pauseMs = Math.max(0, item.pauseBeforeMs || 0);
+    if (pauseMs > 0) {
+      // 16-bit mono: bytes = amostras * 2 (sempre par)
+      const silence = new Uint8Array(Math.round((SAMPLE_RATE * pauseMs) / 1000) * 2);
+      parts.push(silence);
+      totalLen += silence.length;
+    }
+    const bytes = new Uint8Array(await item.pcm.arrayBuffer());
+    parts.push(bytes);
+    totalLen += bytes.length;
+  }
+
   const out = new Uint8Array(44 + totalLen);
   out.set(wavHeader(totalLen), 0);
   let offset = 44;
-  for (const buf of buffers) {
-    out.set(new Uint8Array(buf), offset);
-    offset += buf.byteLength;
+  for (const p of parts) {
+    out.set(p, offset);
+    offset += p.length;
   }
   return new Blob([out], { type: 'audio/wav' });
 }

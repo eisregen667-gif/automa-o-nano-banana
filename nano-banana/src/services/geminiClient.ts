@@ -5,7 +5,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
 import { calculateDurationSeconds } from '../utils/srtParser';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR, PROMPT_NARRATION_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -592,6 +592,92 @@ export async function generateMusicBrief(
   } catch (err: any) {
     console.error('[Nano Banana] Falha na trilha sonora:', err);
     logError(`Passada de Trilha Sonora falhou: ${err?.message || err}`);
+    return null;
+  }
+}
+
+export interface NarrationSegmentPlan {
+  direction: string;
+  performanceText: string;
+  pauseBeforeMs: number;
+}
+
+/**
+ * DIRETOR DE NARRAÇÃO: prepara a sessão de gravação — segmentos por
+ * emoção, direção por trecho, pontuação de performance e pausas reais.
+ */
+export async function directNarration(
+  script: string,
+  entityRegistry: EntityRegistry | null,
+  baseIdentity: string,
+  maxChars: number,
+  apiKey?: string
+): Promise<NarrationSegmentPlan[] | null> {
+  const key = apiKey?.trim();
+  if (!key || !script.trim()) {
+    if (!key) logWarn('Sem chave API do Gemini: direção de narração indisponível.');
+    return null;
+  }
+
+  logInfo('Diretor de Narração: preparando a sessão de gravação (segmentos, direções e pausas)...');
+
+  try {
+    const ai = getClient(key);
+    const colorScript = entityRegistry?.color_script?.length
+      ? JSON.stringify(entityRegistry.color_script, null, 2)
+      : 'não disponível — deduza o arco emocional do próprio texto';
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `NARRATOR FIXED IDENTITY (never contradict):\n${baseIdentity || 'Documentary narrator, calm and authoritative'}\n\nCOLOR SCRIPT (emotional acts):\n${colorScript}\n\nSEGMENT CHARACTER LIMIT: ${maxChars}\n\nFULL NARRATION SCRIPT:\n${script}`
+      }],
+      config: {
+        systemInstruction: PROMPT_NARRATION_DIRECTOR,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            segments: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  direction: { type: Type.STRING, description: 'Modulação emocional deste trecho (idioma do roteiro)' },
+                  performanceText: { type: Type.STRING, description: 'Texto com pontuação de performance (mesmas palavras)' },
+                  pauseBeforeMs: { type: Type.INTEGER, description: 'Silêncio real antes do trecho, em ms' }
+                },
+                required: ['direction', 'performanceText', 'pauseBeforeMs']
+              }
+            }
+          },
+          required: ['segments']
+        }
+      }
+    });
+
+    const parsed = extractJsonObject(response.text || '');
+    const segments: NarrationSegmentPlan[] = Array.isArray(parsed?.segments)
+      ? parsed.segments
+          .filter((s: any) => typeof s?.performanceText === 'string' && s.performanceText.trim())
+          .map((s: any) => ({
+            direction: (s.direction || '').trim(),
+            performanceText: s.performanceText.trim(),
+            pauseBeforeMs: Math.max(0, Math.min(3000, Number(s.pauseBeforeMs) || 0))
+          }))
+      : [];
+
+    if (segments.length === 0) {
+      logError('Diretor de Narração: resposta sem segmentos válidos.');
+      return null;
+    }
+
+    const totalPause = segments.reduce((s, seg) => s + seg.pauseBeforeMs, 0);
+    logSuccess(`Sessão dirigida: ${segments.length} segmentos, ${(totalPause / 1000).toFixed(1)}s de pausas dramáticas planejadas. Revise antes de gravar.`);
+    return segments;
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha no Diretor de Narração:', err);
+    logError(`Diretor de Narração falhou: ${err?.message || err}`);
     return null;
   }
 }
