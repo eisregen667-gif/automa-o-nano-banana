@@ -5,7 +5,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
 import { calculateDurationSeconds } from '../utils/srtParser';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR, PROMPT_NARRATION_DIRECTOR } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR, PROMPT_NARRATION_DIRECTOR, PROMPT_TTS_SCRIPT_DOCTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -600,6 +600,52 @@ export interface NarrationSegmentPlan {
   direction: string;
   performanceText: string;
   pauseBeforeMs: number;
+}
+
+/**
+ * SCRIPT DOCTOR: reescreve o roteiro para TTS — quebra frases longas,
+ * números por extenso, dissolve parênteses — preservando cada fato.
+ */
+export async function refineScriptForTts(
+  script: string,
+  lintReport: string,
+  apiKey?: string
+): Promise<string | null> {
+  const key = apiKey?.trim();
+  if (!key || !script.trim()) {
+    if (!key) logWarn('Sem chave API do Gemini: a correção de escrita para TTS precisa dela (Configurações).');
+    return null;
+  }
+
+  logInfo('Script Doctor: reescrevendo o roteiro para TTS (frases longas, números, marcações)...');
+
+  try {
+    const ai = getClient(key);
+    const response = await ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `LINT REPORT (problems detected automatically):\n${lintReport || 'none provided'}\n\nFULL NARRATION SCRIPT:\n${script}`
+      }],
+      config: { systemInstruction: PROMPT_TTS_SCRIPT_DOCTOR }
+    });
+
+    const text = (response.text || '').trim();
+    if (!text) {
+      logError('Script Doctor: resposta vazia do modelo.');
+      return null;
+    }
+    // Proteção contra respostas truncadas ou resumidas demais
+    if (text.length < script.trim().length * 0.7) {
+      logError(`Script Doctor: resposta suspeita de corte (${text.length} vs ${script.trim().length} caracteres) — mantendo o original.`);
+      return null;
+    }
+    logSuccess(`Script Doctor: roteiro reescrito para TTS (${text.length} caracteres). Revise no editor.`);
+    return text;
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha no Script Doctor:', err);
+    logError(`Script Doctor falhou: ${err?.message || err}`);
+    return null;
+  }
 }
 
 /**

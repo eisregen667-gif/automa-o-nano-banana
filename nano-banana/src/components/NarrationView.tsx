@@ -15,7 +15,7 @@ import {
   buildTtsChunks,
   TtsLintIssue
 } from '../services/geminiTts';
-import { directNarration } from '../services/geminiClient';
+import { directNarration, refineScriptForTts } from '../services/geminiClient';
 import { EntityRegistry } from '../types';
 import { Mic, Square, Download, RefreshCw, Wand2, FileText, Loader2, Clapperboard } from 'lucide-react';
 
@@ -55,6 +55,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
   const [lint, setLint] = useState<TtsLintIssue[]>([]);
   const [running, setRunning] = useState(false);
   const [directing, setDirecting] = useState(false);
+  const [doctoring, setDoctoring] = useState(false);
   const stopRef = useRef(false);
   const chunksRef = useRef(chunks);
   chunksRef.current = chunks;
@@ -113,9 +114,30 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
   const handleSanitize = () => {
     const clean = sanitizeScriptForTts(script);
     setScript(clean);
-    setLint(lintScriptForTts(clean));
+    const issues = lintScriptForTts(clean);
+    setLint(issues);
     persistMeta({ script: clean });
     logInfo('Narração: roteiro saneado para TTS (marcações removidas).');
+    if (issues.some((i) => i.severity === 'grave')) {
+      logWarn('Ainda há problemas de escrita (frases longas/números). Use "Corrigir escrita com IA" para resolver.');
+    }
+  };
+
+  // Script Doctor: reescreve frases longas e números por extenso preservando os fatos
+  const handleDoctor = async () => {
+    if (!script.trim() || doctoring) return;
+    setDoctoring(true);
+    try {
+      const report = lint.map((i) => `- [${i.severity}] ${i.message}`).join('\n');
+      const fixed = await refineScriptForTts(sanitizeScriptForTts(script), report, apiKey);
+      if (fixed) {
+        setScript(fixed);
+        setLint(lintScriptForTts(fixed));
+        persistMeta({ script: fixed });
+      }
+    } finally {
+      setDoctoring(false);
+    }
   };
 
   const handleBuildChunks = () => {
@@ -274,7 +296,7 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
         </div>
         <textarea
           value={script}
-          onChange={(e) => { setScript(e.target.value); persistMeta({ script: e.target.value }); }}
+          onChange={(e) => { setScript(e.target.value); setLint(lintScriptForTts(e.target.value)); persistMeta({ script: e.target.value }); }}
           rows={8}
           placeholder="Cole o texto da narração ou importe do SRT..."
           className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-amber-400/50 leading-relaxed"
@@ -290,6 +312,19 @@ export const NarrationView: React.FC<NarrationViewProps> = ({ apiKey, srtBlocks,
                 {issue.severity === 'grave' ? '⚠' : 'ℹ'} {issue.message}
               </p>
             ))}
+            <div className="flex items-center gap-2 pt-1">
+              <button onClick={handleDoctor} disabled={doctoring || running || !apiKey?.trim()}
+                className="px-3.5 py-2 rounded-lg bg-violet-500/10 hover:bg-violet-500/25 text-violet-300 border border-violet-500/40 text-xs font-bold transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                title="O Gemini reescreve o roteiro para o TTS: quebra frases longas, escreve números por extenso e dissolve parênteses — sem mudar nenhum fato. O resultado aparece aqui para você revisar.">
+                {doctoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                {doctoring ? 'Reescrevendo...' : 'Corrigir escrita com IA'}
+              </button>
+              <span className="text-[10px] text-slate-500">
+                {apiKey?.trim()
+                  ? 'Quebra frases longas e escreve números por extenso, preservando todos os fatos.'
+                  : 'Configure a chave API para habilitar a correção com IA.'}
+              </span>
+            </div>
           </div>
         )}
       </div>
