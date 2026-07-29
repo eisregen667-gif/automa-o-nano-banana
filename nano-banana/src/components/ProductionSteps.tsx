@@ -30,6 +30,11 @@ interface ProductionStepsProps {
   musicBusy: boolean;
   hasMusic: boolean;
   onMusic: () => void;
+  hasMusicPlan: boolean;
+  tracksBusy: boolean;
+  tracksDone: number;
+  tracksTotal: number;
+  onMusicTracks: () => void;
   videoBusy: boolean;
   hasVideoPrompts: boolean;
   onVideoPrompts: () => void;
@@ -215,9 +220,15 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
         <Btn onClick={p.onBroll} disabled={!p.hasPrompts} busy={p.brollBusy} variant="secondary" title="Cutaways de detalhe (máx. 1 por cena)">
           🎞 B-Roll
         </Btn>
-        <Btn onClick={p.onMusic} disabled={!p.hasPrompts} busy={p.musicBusy} variant="secondary" title="Planeja 2-5 faixas alinhadas aos atos, com prompts para Suno/Udio e timecodes de entrada — baixa o TRILHA_SONORA.txt na hora">
-          🎵 {p.hasMusic ? 'Trilha ✓' : 'Trilha Sonora'}
+        <Btn onClick={p.onMusic} disabled={!p.hasPrompts} busy={p.musicBusy} variant="secondary" title="Planeja os cues emocionais casados com as direções do Diretor de Narração, com timecodes de entrada — baixa o TRILHA_SONORA.txt na hora">
+          🎵 {p.hasMusic ? 'Plano da Trilha ✓' : 'Plano da Trilha'}
         </Btn>
+        {p.hasMusicPlan && (
+          <Btn onClick={p.onMusicTracks} busy={p.tracksBusy} variant="secondary"
+            title="O Lyria 3 gera cada cue do plano (vinheta de 30s + faixas de até 3 min) e baixa os arquivos de áudio prontos, nomeados pelo timecode de entrada">
+            🎶 {p.tracksBusy ? `Gerando ${p.tracksDone}/${p.tracksTotal}` : 'Gerar Faixas (Lyria 3)'}
+          </Btn>
+        )}
       </StepRow>
 
       <StepRow

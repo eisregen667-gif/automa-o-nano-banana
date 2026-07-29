@@ -21,8 +21,10 @@ import {
   generateTitleCards,
   generateBrollPlans,
   generateMusicBrief,
-  inspectImageQuality
+  inspectImageQuality,
+  MusicPlan
 } from './services/geminiClient';
+import { generateLyriaTrack } from './services/geminiLyria';
 import { AnimaticPlayer } from './components/AnimaticPlayer';
 import { NarrationView } from './components/NarrationView';
 import { logInfo, logSuccess, logWarn, logError } from './utils/logger';
@@ -75,6 +77,8 @@ export default function App() {
   const [isGeneratingBroll, setIsGeneratingBroll] = useState<boolean>(false);
   const [isGeneratingMusic, setIsGeneratingMusic] = useState<boolean>(false);
   const [musicBrief, setMusicBrief] = useState<string | null>(null);
+  const [musicPlan, setMusicPlan] = useState<MusicPlan | null>(null);
+  const [musicTracks, setMusicTracks] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
   const [referenceUrls, setReferenceUrls] = useState<string>('');
   const [autoPasses, setAutoPasses] = useState<{ cards: boolean; broll: boolean; video: boolean; music: boolean }>({
     cards: true,
@@ -160,6 +164,9 @@ export default function App() {
 
         const savedMusic = await getDbItem<string>('musicBrief');
         if (savedMusic) setMusicBrief(savedMusic);
+
+        const savedMusicPlan = await getDbItem<MusicPlan>('musicPlan');
+        if (savedMusicPlan) setMusicPlan(savedMusicPlan);
 
         const savedUrls = await getDbItem<string>('referenceUrls');
         if (savedUrls) setReferenceUrls(savedUrls);
@@ -858,7 +865,13 @@ export default function App() {
 
     setIsGeneratingMusic(true);
     try {
-      const brief = await generateMusicBrief(
+      // As direções emocionais do Diretor de Narração guiam os cues musicais
+      const ttsProject = await getDbItem<{ chunks?: { direction?: string }[] }>('ttsProject');
+      const narrationDirections = (ttsProject?.chunks || [])
+        .map((c) => (c.direction || '').trim())
+        .filter(Boolean);
+
+      const result = await generateMusicBrief(
         sceneFrames.map((f) => ({
           id: f.id,
           timeStart: f.timeStart,
@@ -867,29 +880,76 @@ export default function App() {
         })),
         entityRegistry,
         stylecard.textStyle,
-        config.customApiKey
+        config.customApiKey,
+        narrationDirections
       );
 
-      if (brief) {
-        setMusicBrief(brief);
-        await setDbItem('musicBrief', brief);
+      if (result) {
+        setMusicBrief(result.text);
+        setMusicPlan(result.plan);
+        await setDbItem('musicBrief', result.text);
+        await setDbItem('musicPlan', result.plan);
         if (!autoDownload) return;
         // Download imediato do guia
-        const blob = new Blob([brief], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'TRILHA_SONORA.txt';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        downloadBlob(new Blob([result.text], { type: 'text/plain;charset=utf-8' }), 'TRILHA_SONORA.txt');
       }
     } catch (err: any) {
       console.error('Failed to generate music brief:', err);
       logError(`Falha ao gerar a trilha sonora: ${err?.message || err}`);
     } finally {
       setIsGeneratingMusic(false);
+    }
+  };
+
+  // GERAÇÃO DAS FAIXAS: Lyria 3 renderiza cada cue do plano e baixa os arquivos
+  const handleGenerateMusicTracks = async () => {
+    const plan = musicPlan;
+    if (!plan || musicTracks.running) return;
+    if (!config.customApiKey?.trim()) {
+      logWarn('A geração de faixas com o Lyria 3 requer a chave API do Gemini (Configurações).');
+      return;
+    }
+
+    const jobs: { name: string; prompt: string; model: 'lyria-3-pro-preview' | 'lyria-3-clip-preview' }[] = [];
+    if (plan.introSting) {
+      jobs.push({ name: 'TRILHA_00_VINHETA_ABERTURA', prompt: plan.introSting.prompt, model: 'lyria-3-clip-preview' });
+    }
+    plan.cues.forEach((cue, i) => {
+      const entry = cue.timeStart.replace(/[:,]/g, '-').replace(/-\d{3}$/, '');
+      jobs.push({
+        name: `TRILHA_${String(i + 1).padStart(2, '0')}_ENTRA_${entry}`,
+        prompt: cue.prompt,
+        model: 'lyria-3-pro-preview'
+      });
+    });
+
+    if (jobs.length === 0) {
+      logWarn('O plano da trilha não tem cues. Gere a Trilha Sonora novamente.');
+      return;
+    }
+
+    setMusicTracks({ running: true, done: 0, total: jobs.length });
+    logInfo(`Lyria 3: gerando ${jobs.length} faixa(s) da trilha sonora...`);
+
+    let ok = 0;
+    for (let i = 0; i < jobs.length; i++) {
+      const job = jobs[i];
+      try {
+        const track = await generateLyriaTrack(job.prompt, job.model, config.customApiKey.trim());
+        downloadBlob(track.blob, `${job.name}.${track.ext}`);
+        ok++;
+        logSuccess(`Lyria 3: ${job.name} pronta (${(track.blob.size / 1048576).toFixed(1)} MB).`);
+      } catch (err: any) {
+        logError(`Lyria 3: falha em ${job.name} — ${err?.message || err}`);
+      }
+      setMusicTracks({ running: true, done: i + 1, total: jobs.length });
+    }
+
+    setMusicTracks({ running: false, done: ok, total: jobs.length });
+    if (ok === jobs.length) {
+      logSuccess(`Trilha sonora completa: ${ok} faixa(s) baixadas. Solte cada uma no timecode do TRILHA_SONORA.txt.`);
+    } else {
+      logWarn(`Trilha sonora: ${ok}/${jobs.length} faixa(s) geradas. Repita para tentar as que falharam.`);
     }
   };
 
@@ -1106,6 +1166,11 @@ export default function App() {
                   musicBusy={isGeneratingMusic}
                   hasMusic={!!musicBrief}
                   onMusic={handleGenerateMusic}
+                  hasMusicPlan={!!musicPlan && musicPlan.cues.length > 0}
+                  tracksBusy={musicTracks.running}
+                  tracksDone={musicTracks.done}
+                  tracksTotal={musicTracks.total}
+                  onMusicTracks={handleGenerateMusicTracks}
                   videoBusy={isGeneratingVideoPrompts}
                   hasVideoPrompts={frames.some((f) => !!f.videoPrompt)}
                   onVideoPrompts={handleGenerateVideoPrompts}

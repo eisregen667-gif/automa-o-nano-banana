@@ -528,33 +528,55 @@ export async function generateBrollPlans(
   }
 }
 
+export interface MusicCue {
+  actLabel: string;
+  timeStart: string;
+  timeEnd: string;
+  prompt: string;
+  mixNote?: string;
+}
+
+export interface MusicPlan {
+  introSting?: { prompt: string; note?: string };
+  cues: MusicCue[];
+}
+
+export interface MusicBriefResult {
+  text: string;
+  plan: MusicPlan;
+}
+
 /**
- * PASSADA DE TRILHA SONORA: planeja 2-5 faixas longas alinhadas aos atos,
- * com prompts prontos para Suno/Udio e timecodes de entrada. Retorna o
- * guia formatado em texto (TRILHA_SONORA.txt) ou null em caso de falha.
+ * PASSADA DE TRILHA SONORA: planeja cues emocionais (2-8) casados com as
+ * direções do Diretor de Narração, com prompts prontos para o Lyria 3.
+ * Retorna o guia formatado (TRILHA_SONORA.txt) + o plano estruturado.
  */
 export async function generateMusicBrief(
   frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
   entityRegistry: EntityRegistry | null,
   textStylecard?: string,
-  apiKey?: string
-): Promise<string | null> {
+  apiKey?: string,
+  narrationDirections?: string[]
+): Promise<MusicBriefResult | null> {
   const key = apiKey?.trim();
   if (!key || frames.length === 0) {
     if (!key) logWarn('Sem chave API do Gemini: geração da trilha sonora indisponível.');
     return null;
   }
 
-  logInfo('Passada de Trilha Sonora: planejando as faixas do documentário...');
+  logInfo('Passada de Trilha Sonora: planejando os cues emocionais do documentário...');
 
   try {
     const ai = getClient(key);
     const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
+    const directorSession = narrationDirections?.length
+      ? narrationDirections.map((d, i) => `${i + 1}. ${d}`).join('\n')
+      : 'não disponível — alinhe os cues ao color_script';
 
     const response = await ai.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: [{
-        text: `Subtitle timeline (frames):\n${JSON.stringify(frames.map((f) => ({ id: f.id, timeStart: f.timeStart, timeEnd: f.timeEnd, text: f.subtitleText })), null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic documentary'}`
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames.map((f) => ({ id: f.id, timeStart: f.timeStart, timeEnd: f.timeEnd, text: f.subtitleText })), null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nNARRATION DIRECTOR SESSION (ordered emotional directions):\n${directorSession}\n\nProject Stylecard:\n${textStylecard || 'Cinematic documentary'}`
       }],
       config: {
         systemInstruction: PROMPT_MUSIC_DIRECTOR,
@@ -568,27 +590,43 @@ export async function generateMusicBrief(
       return null;
     }
 
+    const plan: MusicPlan = {
+      introSting: parsed.intro_sting?.sunoPrompt
+        ? { prompt: String(parsed.intro_sting.sunoPrompt), note: parsed.intro_sting.note ? String(parsed.intro_sting.note) : undefined }
+        : undefined,
+      cues: parsed.segments
+        .filter((seg: any) => seg?.sunoPrompt)
+        .map((seg: any, i: number) => ({
+          actLabel: String(seg.act_label || `Ato ${i + 1}`),
+          timeStart: String(seg.timeStart || '?'),
+          timeEnd: String(seg.timeEnd || '?'),
+          prompt: String(seg.sunoPrompt),
+          mixNote: seg.mixNote ? String(seg.mixNote) : undefined
+        }))
+    };
+
     const lines: string[] = [];
     lines.push('🎵 TRILHA SONORA — GUIA DE MONTAGEM');
-    lines.push('Gere cada faixa no Suno/Udio com o prompt indicado e solte no timecode de entrada. Pronto.');
+    lines.push('As faixas são geradas pelo Lyria 3 dentro da ferramenta (botão "Gerar Faixas"). Solte cada arquivo no timecode de entrada.');
+    lines.push('Os prompts abaixo também funcionam no Suno/Udio como plano B.');
     lines.push('');
 
-    if (parsed.intro_sting?.sunoPrompt) {
-      lines.push('VINHETA DE ABERTURA (10-20s — sob o cold open / cartela de título)');
-      lines.push(`PROMPT: ${parsed.intro_sting.sunoPrompt}`);
-      if (parsed.intro_sting.note) lines.push(`NOTA: ${parsed.intro_sting.note}`);
+    if (plan.introSting) {
+      lines.push('VINHETA DE ABERTURA (30s — sob o cold open / cartela de título)');
+      lines.push(`PROMPT: ${plan.introSting.prompt}`);
+      if (plan.introSting.note) lines.push(`NOTA: ${plan.introSting.note}`);
       lines.push('');
     }
 
-    parsed.segments.forEach((seg: any, i: number) => {
-      lines.push(`FAIXA ${i + 1} — ${seg.act_label || `Ato ${i + 1}`}  [${seg.timeStart || '?'} → ${seg.timeEnd || '?'}]`);
-      lines.push(`PROMPT: ${seg.sunoPrompt || '-'}`);
-      if (seg.mixNote) lines.push(`MIX: ${seg.mixNote}`);
+    plan.cues.forEach((cue, i) => {
+      lines.push(`FAIXA ${i + 1} — ${cue.actLabel}  [${cue.timeStart} → ${cue.timeEnd}]`);
+      lines.push(`PROMPT: ${cue.prompt}`);
+      if (cue.mixNote) lines.push(`MIX: ${cue.mixNote}`);
       lines.push('');
     });
 
-    logSuccess(`Trilha Sonora planejada: vinheta de abertura + ${parsed.segments.length} faixa(s) alinhadas aos atos.`);
-    return lines.join('\n');
+    logSuccess(`Trilha Sonora planejada: vinheta de abertura + ${plan.cues.length} cue(s) emocionais${narrationDirections?.length ? ' casados com a sessão do Diretor de Narração' : ''}.`);
+    return { text: lines.join('\n'), plan };
   } catch (err: any) {
     console.error('[Nano Banana] Falha na trilha sonora:', err);
     logError(`Passada de Trilha Sonora falhou: ${err?.message || err}`);
