@@ -27,6 +27,11 @@ interface ProductionStepsProps {
   onTitleCards: () => void;
   brollBusy: boolean;
   onBroll: () => void;
+  insertsBusy: boolean;
+  onInserts: () => void;
+  soundBusy: boolean;
+  hasSound: boolean;
+  onSound: () => void;
   musicBusy: boolean;
   hasMusic: boolean;
   onMusic: () => void;
@@ -40,8 +45,8 @@ interface ProductionStepsProps {
   onVideoPrompts: () => void;
   onPreview: () => void;
   onExport: () => void;
-  autoPasses: { cards: boolean; broll: boolean; video: boolean; music: boolean };
-  onToggleAutoPass: (key: 'cards' | 'broll' | 'video' | 'music') => void;
+  autoPasses: { cards: boolean; broll: boolean; inserts: boolean; sound: boolean; video: boolean; music: boolean };
+  onToggleAutoPass: (key: 'cards' | 'broll' | 'inserts' | 'sound' | 'video' | 'music') => void;
 }
 
 const NUM_STYLES: Record<StepState, string> = {
@@ -120,13 +125,15 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
 
   const s1: StepState = p.isAnalyzing ? 'busy' : p.hasPrompts ? 'done' : p.hasScript ? 'ready' : 'locked';
   const s2: StepState = p.queueInProgress ? 'busy' : allImagesDone ? 'done' : p.hasPrompts ? 'ready' : 'locked';
-  const s3: StepState = p.qcRunning || p.cardsBusy || p.brollBusy ? 'busy' : p.completedFrames > 0 ? 'ready' : 'locked';
+  const s3: StepState = p.qcRunning || p.cardsBusy || p.brollBusy || p.insertsBusy || p.soundBusy ? 'busy' : p.completedFrames > 0 ? 'ready' : 'locked';
   const s4: StepState = p.videoBusy ? 'busy' : p.hasVideoPrompts ? 'done' : p.hasPrompts ? 'ready' : 'locked';
   const s5: StepState = p.completedFrames > 0 ? 'ready' : 'locked';
 
-  const AUTO_OPTIONS: { key: 'cards' | 'broll' | 'video' | 'music'; label: string }[] = [
+  const AUTO_OPTIONS: { key: 'cards' | 'broll' | 'inserts' | 'sound' | 'video' | 'music'; label: string }[] = [
     { key: 'cards', label: '📋 Cartelas' },
     { key: 'broll', label: '🎞 B-Roll' },
+    { key: 'inserts', label: '🗺 Inserts' },
+    { key: 'sound', label: '🔊 SFX' },
     { key: 'video', label: '🎬 Prompts de Vídeo' },
     { key: 'music', label: '🎵 Trilha Sonora' }
   ];
@@ -219,6 +226,12 @@ export const ProductionSteps: React.FC<ProductionStepsProps> = (p) => {
         </Btn>
         <Btn onClick={p.onBroll} disabled={!p.hasPrompts} busy={p.brollBusy} variant="secondary" title="Cutaways de detalhe (máx. 1 por cena)">
           🎞 B-Roll
+        </Btn>
+        <Btn onClick={p.onInserts} disabled={!p.hasPrompts} busy={p.insertsBusy} variant="secondary" title="Mapas, linhas do tempo, diagramas e cards de dados nos gatilhos editoriais certos">
+          🗺 Inserts
+        </Btn>
+        <Btn onClick={p.onSound} disabled={!p.hasPrompts} busy={p.soundBusy} variant="secondary" title="Planeja ambiências, risers/stingers e os silêncios estratégicos — baixa o SFX_CUE_SHEET.txt na hora">
+          🔊 {p.hasSound ? 'Som ✓' : 'Diretor de Som'}
         </Btn>
         <Btn onClick={p.onMusic} disabled={!p.hasPrompts} busy={p.musicBusy} variant="secondary" title="Planeja os cues emocionais casados com as direções do Diretor de Narração, com timecodes de entrada — baixa o TRILHA_SONORA.txt na hora">
           🎵 {p.hasMusic ? 'Plano da Trilha ✓' : 'Plano da Trilha'}

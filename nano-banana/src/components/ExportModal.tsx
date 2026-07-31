@@ -15,6 +15,8 @@ interface ExportModalProps {
   entityRegistry?: EntityRegistry | null;
   entityReferenceSheets?: Record<string, string>;
   musicBrief?: string | null;
+  soundDesign?: string | null;
+  lowerThirds?: string | null;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -26,6 +28,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   entityRegistry,
   entityReferenceSheets = {},
   musicBrief,
+  soundDesign,
+  lowerThirds,
 }) => {
   const [isZipping, setIsZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState(0);
@@ -216,6 +220,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       // Add TRILHA_SONORA.txt (guia de música por ato)
       if (musicBrief) {
         zip.file('TRILHA_SONORA.txt', musicBrief);
+      }
+
+      // Add SFX_CUE_SHEET.txt (ambiências, acentos e silêncios estratégicos)
+      if (soundDesign) {
+        zip.file('SFX_CUE_SHEET.txt', soundDesign);
+      }
+
+      // Add LOWER_THIRDS.txt (legendas de localização/identificação do editor)
+      if (lowerThirds) {
+        zip.file('LOWER_THIRDS.txt', lowerThirds);
       }
 
       // Add FONTES.txt (fontes reais consultadas pelo grounding + fatos verificados)

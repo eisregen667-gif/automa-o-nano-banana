@@ -20,9 +20,12 @@ import {
   generateVideoPrompts,
   generateTitleCards,
   generateBrollPlans,
+  generateInsertPlans,
+  generateSoundDesign,
   generateMusicBrief,
   inspectImageQuality,
-  MusicPlan
+  MusicPlan,
+  SoundSilence
 } from './services/geminiClient';
 import { generateLyriaTrack } from './services/geminiLyria';
 import { AnimaticPlayer } from './components/AnimaticPlayer';
@@ -59,8 +62,6 @@ export default function App() {
     const savedKey = typeof window !== 'undefined' ? (localStorage.getItem('nano_banana_api_key') || '') : '';
     return {
       model: 'gemini-3.1-flash-lite-image',
-      qualityResolution: '1K',
-      customProvider: 'gemini',
       customApiKey: savedKey,
       filenameTemplate: '{index}_{start}_{end}'
     };
@@ -75,14 +76,20 @@ export default function App() {
   const [isGeneratingVideoPrompts, setIsGeneratingVideoPrompts] = useState<boolean>(false);
   const [isGeneratingTitleCards, setIsGeneratingTitleCards] = useState<boolean>(false);
   const [isGeneratingBroll, setIsGeneratingBroll] = useState<boolean>(false);
+  const [isGeneratingInserts, setIsGeneratingInserts] = useState<boolean>(false);
+  const [isGeneratingSound, setIsGeneratingSound] = useState<boolean>(false);
+  const [soundDesign, setSoundDesign] = useState<string | null>(null);
+  const [lowerThirds, setLowerThirds] = useState<string | null>(null);
   const [isGeneratingMusic, setIsGeneratingMusic] = useState<boolean>(false);
   const [musicBrief, setMusicBrief] = useState<string | null>(null);
   const [musicPlan, setMusicPlan] = useState<MusicPlan | null>(null);
   const [musicTracks, setMusicTracks] = useState<{ running: boolean; done: number; total: number }>({ running: false, done: 0, total: 0 });
   const [referenceUrls, setReferenceUrls] = useState<string>('');
-  const [autoPasses, setAutoPasses] = useState<{ cards: boolean; broll: boolean; video: boolean; music: boolean }>({
+  const [autoPasses, setAutoPasses] = useState<{ cards: boolean; broll: boolean; inserts: boolean; sound: boolean; video: boolean; music: boolean }>({
     cards: true,
     broll: true,
+    inserts: true,
+    sound: true,
     video: true,
     music: true
   });
@@ -168,11 +175,18 @@ export default function App() {
         const savedMusicPlan = await getDbItem<MusicPlan>('musicPlan');
         if (savedMusicPlan) setMusicPlan(savedMusicPlan);
 
+        const savedSound = await getDbItem<string>('soundDesign');
+        if (savedSound) setSoundDesign(savedSound);
+
+        const savedLowerThirds = await getDbItem<string>('lowerThirds');
+        if (savedLowerThirds) setLowerThirds(savedLowerThirds);
+
         const savedUrls = await getDbItem<string>('referenceUrls');
         if (savedUrls) setReferenceUrls(savedUrls);
 
-        const savedAutoPasses = await getDbItem<typeof autoPasses>('autoPasses');
-        if (savedAutoPasses) setAutoPasses(savedAutoPasses);
+        const savedAutoPasses = await getDbItem<Partial<typeof autoPasses>>('autoPasses');
+        // Merge com os defaults: chaves novas (inserts/sound) entram ligadas
+        if (savedAutoPasses) setAutoPasses((prev) => ({ ...prev, ...savedAutoPasses }));
 
         if (savedFrames && Array.isArray(savedFrames) && savedFrames.length > 0) {
           logInfo(`Projeto anterior restaurado: ${savedFrames.length} frames carregados do navegador.`);
@@ -339,8 +353,9 @@ export default function App() {
           isPaused: false
         }));
 
-        // Passadas automáticas: cartelas→b-roll em série (evita conflito de
-        // blocos), trilha em paralelo com elas; prompts de vídeo por último
+        // Passadas automáticas: cartelas→b-roll→inserts em série (evita
+        // conflito de blocos); som→trilha em paralelo com elas (a trilha lê
+        // os silêncios do som); prompts de vídeo por último
         const flush = () => new Promise((r) => setTimeout(r, 80));
         const visualChain = (async () => {
           if (autoPasses.cards) {
@@ -351,9 +366,16 @@ export default function App() {
             await flush();
             await handleGenerateBroll();
           }
+          if (autoPasses.inserts) {
+            await flush();
+            await handleGenerateInserts();
+          }
         })();
-        const musicChain = autoPasses.music ? handleGenerateMusic(false) : Promise.resolve();
-        await Promise.all([visualChain, musicChain]);
+        const audioChain = (async () => {
+          if (autoPasses.sound) await handleGenerateSound(false);
+          if (autoPasses.music) await handleGenerateMusic(false);
+        })();
+        await Promise.all([visualChain, audioChain]);
 
         if (autoPasses.video) {
           await flush();
@@ -600,7 +622,7 @@ export default function App() {
 
     setIsGeneratingTitleCards(true);
     try {
-      const plans = await generateTitleCards(
+      const result = await generateTitleCards(
         sceneFrames.map((f) => ({
           id: f.id,
           timeStart: f.timeStart,
@@ -611,6 +633,21 @@ export default function App() {
         stylecard.textStyle,
         config.customApiKey
       );
+      const plans = result.cards;
+
+      // Plano de lower thirds (overlay do editor) sai junto na mesma chamada
+      if (result.lowerThirds.length > 0) {
+        const ltLines: string[] = [];
+        ltLines.push('🔤 LOWER THIRDS — LEGENDAS DE LOCALIZAÇÃO/IDENTIFICAÇÃO');
+        ltLines.push('Aplique cada uma como texto overlay no editor, no timecode indicado.');
+        ltLines.push('');
+        result.lowerThirds.forEach((lt, i) => {
+          ltLines.push(`${i + 1}. [${lt.timecode}] "${lt.text}"${lt.note ? ` — ${lt.note}` : ''}`);
+        });
+        const ltText = ltLines.join('\n');
+        setLowerThirds(ltText);
+        await setDbItem('lowerThirds', ltText);
+      }
 
       if (plans.length === 0) {
         logWarn('Nenhuma cartela foi planejada para este roteiro.');
@@ -633,6 +670,9 @@ export default function App() {
           return {
             ...reverted,
             isTitleCard: true,
+            isBroll: false,
+            isInsert: false,
+            insertType: undefined,
             cardText: plan.cardText,
             visualPrompt: plan.imagePrompt,
             videoPrompt: plan.videoPrompt,
@@ -697,8 +737,8 @@ export default function App() {
             : f;
 
           const plan = planByTarget.get(reverted.id);
-          // Não sobrescreve blocos que já são cartela
-          if (!plan || reverted.isTitleCard) return reverted;
+          // Não sobrescreve blocos que já são cartela ou insert
+          if (!plan || reverted.isTitleCard || reverted.isInsert) return reverted;
 
           return {
             ...reverted,
@@ -728,6 +768,110 @@ export default function App() {
       logError(`Falha ao gerar B-roll: ${err?.message || err}`);
     } finally {
       setIsGeneratingBroll(false);
+    }
+  };
+
+  // PASSADA DE INSERTS GRÁFICOS: mapas, linhas do tempo, diagramas, cards de dados
+  const handleGenerateInserts = async () => {
+    const sceneFrames = framesRef.current.filter((f) => Number.isInteger(f.id));
+    if (sceneFrames.length === 0 || isGeneratingInserts) return;
+
+    setIsGeneratingInserts(true);
+    try {
+      const plans = await generateInsertPlans(
+        sceneFrames.map((f) => ({
+          id: f.id,
+          timeStart: f.timeStart,
+          timeEnd: f.timeEnd,
+          subtitleText: f.subtitleText
+        })),
+        entityRegistry,
+        stylecard.textStyle,
+        config.customApiKey
+      );
+
+      if (plans.length === 0) {
+        logWarn('Nenhum insert gráfico foi planejado para este roteiro.');
+        return;
+      }
+
+      // Replacement model: cada insert ocupa o visual do bloco SRT escolhido
+      const planByTarget = new Map(plans.map((p) => [p.targetFrameId, p]));
+
+      setFrames((prev) => {
+        const next = prev.map((f) => {
+          // Reverte inserts anteriores para o prompt original da Passada 2
+          const reverted = f.isInsert
+            ? (releaseImageUrl(f.imageUrl), { ...f, isInsert: false, insertType: undefined, visualPrompt: f.originalPrompt, videoPrompt: undefined, cameraShot: undefined, status: 'pending' as const, imageUrl: undefined })
+            : f;
+
+          const plan = planByTarget.get(reverted.id);
+          // Não sobrescreve blocos que já são cartela ou B-roll
+          if (!plan || reverted.isTitleCard || reverted.isBroll) return reverted;
+
+          return {
+            ...reverted,
+            isInsert: true,
+            insertType: plan.insertType,
+            visualPrompt: plan.imagePrompt,
+            videoPrompt: plan.videoPrompt,
+            cameraShot: 'Graphic Insert',
+            mood: `Insert: ${plan.label}`,
+            status: 'pending' as const,
+            imageUrl: undefined,
+            error: undefined
+          };
+        });
+        setDbItem('frames', stripImagesForPersist(next));
+        setQueueState((q) => ({
+          ...q,
+          total: next.length,
+          completed: next.filter((fr) => fr.status === 'completed').length,
+          failed: next.filter((fr) => fr.status === 'failed').length
+        }));
+        return next;
+      });
+
+      logSuccess(`${plans.length} insert(s) gráfico(s) aplicado(s) aos blocos ${plans.map((p) => `#${p.targetFrameId}`).join(', ')}. Rode a fila para renderizá-los.`);
+    } catch (err: any) {
+      console.error('Failed to generate inserts:', err);
+      logError(`Falha ao gerar inserts: ${err?.message || err}`);
+    } finally {
+      setIsGeneratingInserts(false);
+    }
+  };
+
+  // DIRETOR DE SOM: SFX cue sheet + silêncios estratégicos (que a trilha respeita)
+  const handleGenerateSound = async (autoDownload: boolean = true) => {
+    const sceneFrames = framesRef.current.filter((f) => Number.isInteger(f.id));
+    if (sceneFrames.length === 0 || isGeneratingSound) return;
+
+    setIsGeneratingSound(true);
+    try {
+      const result = await generateSoundDesign(
+        sceneFrames.map((f) => ({
+          id: f.id,
+          timeStart: f.timeStart,
+          timeEnd: f.timeEnd,
+          subtitleText: f.subtitleText
+        })),
+        entityRegistry,
+        config.customApiKey
+      );
+
+      if (result) {
+        setSoundDesign(result.text);
+        await setDbItem('soundDesign', result.text);
+        await setDbItem('soundSilences', result.silences);
+        if (autoDownload) {
+          downloadBlob(new Blob([result.text], { type: 'text/plain;charset=utf-8' }), 'SFX_CUE_SHEET.txt');
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to generate sound design:', err);
+      logError(`Falha no Diretor de Som: ${err?.message || err}`);
+    } finally {
+      setIsGeneratingSound(false);
     }
   };
 
@@ -866,11 +1010,13 @@ export default function App() {
 
     setIsGeneratingMusic(true);
     try {
-      // As direções emocionais do Diretor de Narração guiam os cues musicais
+      // As direções emocionais do Diretor de Narração guiam os cues musicais;
+      // os silêncios estratégicos do Diretor de Som entram nos arcos dinâmicos
       const ttsProject = await getDbItem<{ chunks?: { direction?: string }[] }>('ttsProject');
       const narrationDirections = (ttsProject?.chunks || [])
         .map((c) => (c.direction || '').trim())
         .filter(Boolean);
+      const strategicSilences = (await getDbItem<SoundSilence[]>('soundSilences')) || [];
 
       const result = await generateMusicBrief(
         sceneFrames.map((f) => ({
@@ -882,7 +1028,8 @@ export default function App() {
         entityRegistry,
         stylecard.textStyle,
         config.customApiKey,
-        narrationDirections
+        narrationDirections,
+        strategicSilences
       );
 
       if (result) {
@@ -1164,6 +1311,11 @@ export default function App() {
                   onTitleCards={handleGenerateTitleCards}
                   brollBusy={isGeneratingBroll}
                   onBroll={handleGenerateBroll}
+                  insertsBusy={isGeneratingInserts}
+                  onInserts={handleGenerateInserts}
+                  soundBusy={isGeneratingSound}
+                  hasSound={!!soundDesign}
+                  onSound={handleGenerateSound}
                   musicBusy={isGeneratingMusic}
                   hasMusic={!!musicBrief}
                   onMusic={handleGenerateMusic}
@@ -1303,6 +1455,8 @@ export default function App() {
         entityRegistry={entityRegistry}
         entityReferenceSheets={entityReferenceSheets}
         musicBrief={musicBrief}
+        soundDesign={soundDesign}
+        lowerThirds={lowerThirds}
       />
 
       <PromptMatrixModal

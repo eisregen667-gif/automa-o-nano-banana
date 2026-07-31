@@ -5,7 +5,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { EntityRegistry, ScriptEntity, SrtBlock } from '../types';
 import { calculateDurationSeconds } from '../utils/srtParser';
-import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR, PROMPT_NARRATION_DIRECTOR, PROMPT_TTS_SCRIPT_DOCTOR } from './prompts';
+import { PROMPT_ENTITY_REGISTRY, PROMPT_VISUAL_DIRECTOR, PROMPT_VIDEO_DIRECTOR, PROMPT_TITLE_CARD_DIRECTOR, PROMPT_BROLL_DIRECTOR, PROMPT_IMAGE_QC, PROMPT_MUSIC_DIRECTOR, PROMPT_NARRATION_DIRECTOR, PROMPT_TTS_SCRIPT_DOCTOR, PROMPT_INSERT_DIRECTOR, PROMPT_SOUND_DIRECTOR } from './prompts';
 import { createFallbackCanvasImage } from './fallbackImage';
 import { logInfo, logSuccess, logWarn, logError } from '../utils/logger';
 
@@ -403,20 +403,31 @@ export interface TitleCardPlan {
   designStyle?: string;
 }
 
+export interface LowerThirdPlan {
+  timecode: string;
+  text: string;
+  note?: string;
+}
+
+export interface TitleCardsResult {
+  cards: TitleCardPlan[];
+  lowerThirds: LowerThirdPlan[];
+}
+
 /**
- * PASSADA DE CARTELAS: planeja os title cards do documentário
- * (frequência editorial profissional + design variado coerente com o stylecard)
+ * PASSADA DE CARTELAS: planeja os title cards (incl. mid-tease de retenção)
+ * + o plano de lower thirds para o editor, em uma única chamada.
  */
 export async function generateTitleCards(
   frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
   entityRegistry: EntityRegistry | null,
   textStylecard?: string,
   apiKey?: string
-): Promise<TitleCardPlan[]> {
+): Promise<TitleCardsResult> {
   const key = apiKey?.trim();
   if (!key || frames.length === 0) {
     if (!key) logWarn('Sem chave API do Gemini: geração de cartelas indisponível.');
-    return [];
+    return { cards: [], lowerThirds: [] };
   }
 
   logInfo(`Passada de Cartelas: analisando o roteiro (${frames.length} frames) para planejar os title cards...`);
@@ -425,35 +436,23 @@ export async function generateTitleCards(
     const ai = getClient(key);
     const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
 
-    const response = await ai.models.generateContent({
+    const response = await withBackoff(() => ai.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: [{
         text: `Subtitle timeline (frames):\n${JSON.stringify(frames, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`
       }],
       config: {
         systemInstruction: PROMPT_TITLE_CARD_DIRECTOR,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              targetFrameId: { type: Type.INTEGER, description: 'ID do bloco SRT cujo visual vira esta cartela' },
-              cardText: { type: Type.STRING, description: 'Texto exato da cartela (máx. 6 palavras, idioma do roteiro)' },
-              imagePrompt: { type: Type.STRING, description: 'Prompt de geração da imagem da cartela em inglês' },
-              videoPrompt: { type: Type.STRING, description: 'Prompt de animação ambiente com texto estático, em inglês' },
-              designStyle: { type: Type.STRING, description: 'Rótulo curto do estilo de design escolhido' }
-            },
-            required: ['targetFrameId', 'cardText', 'imagePrompt', 'videoPrompt']
-          }
-        }
+        responseMimeType: 'application/json'
       }
-    });
+    }), 'Passada de Cartelas');
 
-    const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
-    if (!Array.isArray(parsed)) return [];
+    const parsed = extractJsonObject(response.text || '{}');
+    // Compatibilidade: aceita tanto o objeto novo {cards, lower_thirds} quanto o array antigo
+    const rawCards: any[] = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cards) ? parsed.cards : [];
+    const rawLowerThirds: any[] = !Array.isArray(parsed) && Array.isArray(parsed?.lower_thirds) ? parsed.lower_thirds : [];
 
-    const plans: TitleCardPlan[] = parsed
+    const plans: TitleCardPlan[] = rawCards
       .filter((p: any) => p && typeof p.cardText === 'string' && p.cardText.trim() && typeof p.imagePrompt === 'string')
       .slice(0, 8)
       .map((p: any) => ({
@@ -464,12 +463,20 @@ export async function generateTitleCards(
         designStyle: p.designStyle
       }));
 
-    logSuccess(`Passada de Cartelas concluída: ${plans.length} cartela(s) planejada(s): ${plans.map((p) => `"${p.cardText}"`).join(', ')}.`);
-    return plans;
+    const lowerThirds: LowerThirdPlan[] = rawLowerThirds
+      .filter((l: any) => l && typeof l.text === 'string' && l.text.trim())
+      .map((l: any) => ({
+        timecode: String(l.timecode || '?'),
+        text: l.text.trim(),
+        note: l.note ? String(l.note) : undefined
+      }));
+
+    logSuccess(`Passada de Cartelas concluída: ${plans.length} cartela(s) + ${lowerThirds.length} lower third(s) planejados.`);
+    return { cards: plans, lowerThirds };
   } catch (err: any) {
     console.error('[Nano Banana] Falha na geração de cartelas:', err);
     logError(`Passada de Cartelas falhou: ${err?.message || err}`);
-    return [];
+    return { cards: [], lowerThirds: [] };
   }
 }
 
@@ -501,7 +508,7 @@ export async function generateBrollPlans(
     const ai = getClient(key);
     const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
 
-    const response = await ai.models.generateContent({
+    const response = await withBackoff(() => ai.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: [{
         text: `Subtitle timeline (frames):\n${JSON.stringify(frames, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`
@@ -523,7 +530,7 @@ export async function generateBrollPlans(
           }
         }
       }
-    });
+    }), 'Passada de B-Roll');
 
     const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
     if (!Array.isArray(parsed)) return [];
@@ -543,6 +550,184 @@ export async function generateBrollPlans(
     console.error('[Nano Banana] Falha na geração de B-roll:', err);
     logError(`Passada de B-Roll falhou: ${err?.message || err}`);
     return [];
+  }
+}
+
+export interface InsertPlan {
+  targetFrameId: number;
+  insertType: string;
+  label: string;
+  imagePrompt: string;
+  videoPrompt: string;
+}
+
+/**
+ * PASSADA DE INSERTS GRÁFICOS: mapas, linhas do tempo, diagramas e
+ * cards de dados nos gatilhos editoriais certos (modelo de substituição).
+ */
+export async function generateInsertPlans(
+  frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
+  entityRegistry: EntityRegistry | null,
+  textStylecard?: string,
+  apiKey?: string
+): Promise<InsertPlan[]> {
+  const key = apiKey?.trim();
+  if (!key || frames.length === 0) {
+    if (!key) logWarn('Sem chave API do Gemini: geração de inserts indisponível.');
+    return [];
+  }
+
+  logInfo(`Passada de Inserts Gráficos: analisando o roteiro (${frames.length} frames) para planejar mapas/linhas do tempo/diagramas...`);
+
+  try {
+    const ai = getClient(key);
+    const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
+
+    const response = await withBackoff(() => ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nProject Stylecard:\n${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`
+      }],
+      config: {
+        systemInstruction: PROMPT_INSERT_DIRECTOR,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              targetFrameId: { type: Type.INTEGER, description: 'ID do bloco SRT cujo visual vira este insert' },
+              insertType: { type: Type.STRING, description: 'map | timeline | diagram | statcard' },
+              label: { type: Type.STRING },
+              imagePrompt: { type: Type.STRING },
+              videoPrompt: { type: Type.STRING }
+            },
+            required: ['targetFrameId', 'insertType', 'label', 'imagePrompt', 'videoPrompt']
+          }
+        }
+      }
+    }), 'Passada de Inserts');
+
+    const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
+    if (!Array.isArray(parsed)) return [];
+
+    const plans: InsertPlan[] = parsed
+      .filter((p: any) => p && typeof p.imagePrompt === 'string' && p.imagePrompt.trim())
+      .slice(0, 8)
+      .map((p: any) => ({
+        targetFrameId: Number(p.targetFrameId) || 0,
+        insertType: String(p.insertType || 'map'),
+        label: (p.label || 'Insert').trim(),
+        imagePrompt: p.imagePrompt.trim(),
+        videoPrompt: (p.videoPrompt || '').trim()
+      }));
+
+    logSuccess(`Passada de Inserts concluída: ${plans.length} insert(s) planejado(s) (${plans.map((p) => p.insertType).join(', ') || 'nenhum'}).`);
+    return plans;
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha na geração de inserts:', err);
+    logError(`Passada de Inserts falhou: ${err?.message || err}`);
+    return [];
+  }
+}
+
+export interface SoundSilence {
+  timecode: string;
+  durationSeconds: number;
+  reason: string;
+}
+
+export interface SoundDesignResult {
+  text: string;
+  silences: SoundSilence[];
+}
+
+/**
+ * DIRETOR DE SOM: planeja a camada de SFX — ambiências, acentos
+ * (risers/stingers) e os silêncios estratégicos que a trilha respeita.
+ */
+export async function generateSoundDesign(
+  frames: { id: number; timeStart: string; timeEnd: string; subtitleText: string }[],
+  entityRegistry: EntityRegistry | null,
+  apiKey?: string
+): Promise<SoundDesignResult | null> {
+  const key = apiKey?.trim();
+  if (!key || frames.length === 0) {
+    if (!key) logWarn('Sem chave API do Gemini: Diretor de Som indisponível.');
+    return null;
+  }
+
+  logInfo('Diretor de Som: planejando ambiências, acentos e silêncios estratégicos...');
+
+  try {
+    const ai = getClient(key);
+    const registryText = entityRegistry ? JSON.stringify(entityRegistry, null, 2) : '{"detected_niche":"General","entities":[]}';
+
+    const response = await withBackoff(() => ai.models.generateContent({
+      model: GEMINI_TEXT_MODEL,
+      contents: [{
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}`
+      }],
+      config: {
+        systemInstruction: PROMPT_SOUND_DIRECTOR,
+        responseMimeType: 'application/json'
+      }
+    }), 'Diretor de Som');
+
+    const parsed = extractJsonObject(response.text || '{}');
+    if (!parsed || (!Array.isArray(parsed.ambiences) && !Array.isArray(parsed.accents))) {
+      logError('Diretor de Som: resposta inválida do modelo.');
+      return null;
+    }
+
+    const silences: SoundSilence[] = (Array.isArray(parsed.silences) ? parsed.silences : [])
+      .filter((s: any) => s?.timecode)
+      .map((s: any) => ({
+        timecode: String(s.timecode),
+        durationSeconds: Math.max(1, Math.min(4, Number(s.durationSeconds) || 2)),
+        reason: String(s.reason || '')
+      }));
+
+    const lines: string[] = [];
+    lines.push('🔊 SFX CUE SHEET — CAMADA DE SOM');
+    lines.push('Ambiências contínuas + acentos pontuais + silêncios estratégicos. Busque os sons pelos termos em inglês (freesound/artlist) ou gere por IA.');
+    lines.push('');
+
+    if (Array.isArray(parsed.ambiences) && parsed.ambiences.length) {
+      lines.push('AMBIÊNCIAS (camas contínuas, ~-30dB sob a narração)');
+      parsed.ambiences.forEach((a: any, i: number) => {
+        lines.push(`${i + 1}. [${a.timeStart || '?'} → ${a.timeEnd || '?'}] ${a.description || '-'}`);
+        if (a.note) lines.push(`   NOTA: ${a.note}`);
+      });
+      lines.push('');
+    }
+
+    if (Array.isArray(parsed.accents) && parsed.accents.length) {
+      lines.push('ACENTOS (one-shots sincronizados)');
+      parsed.accents.forEach((a: any, i: number) => {
+        lines.push(`${i + 1}. [${a.timecode || '?'}] ${String(a.type || 'sfx').toUpperCase()} (${a.intensity || 'medium'}) — ${a.description || '-'}`);
+      });
+      lines.push('');
+    }
+
+    if (silences.length) {
+      lines.push('SILÊNCIOS ESTRATÉGICOS (música e ambiente somem — o impacto vem do vazio)');
+      silences.forEach((s, i) => {
+        lines.push(`${i + 1}. [${s.timecode}] ~${s.durationSeconds}s — ${s.reason}`);
+      });
+      lines.push('');
+    }
+
+    if (parsed.mixNote) {
+      lines.push(`MIX GERAL: ${parsed.mixNote}`);
+    }
+
+    logSuccess(`Diretor de Som: ${(parsed.ambiences || []).length} ambiência(s), ${(parsed.accents || []).length} acento(s), ${silences.length} silêncio(s) estratégico(s).`);
+    return { text: lines.join('\n'), silences };
+  } catch (err: any) {
+    console.error('[Nano Banana] Falha no Diretor de Som:', err);
+    logError(`Diretor de Som falhou: ${err?.message || err}`);
+    return null;
   }
 }
 
@@ -574,7 +759,8 @@ export async function generateMusicBrief(
   entityRegistry: EntityRegistry | null,
   textStylecard?: string,
   apiKey?: string,
-  narrationDirections?: string[]
+  narrationDirections?: string[],
+  strategicSilences?: SoundSilence[]
 ): Promise<MusicBriefResult | null> {
   const key = apiKey?.trim();
   if (!key || frames.length === 0) {
@@ -590,17 +776,20 @@ export async function generateMusicBrief(
     const directorSession = narrationDirections?.length
       ? narrationDirections.map((d, i) => `${i + 1}. ${d}`).join('\n')
       : 'não disponível — alinhe os cues ao color_script';
+    const silencesSection = strategicSilences?.length
+      ? strategicSilences.map((s) => `- [${s.timecode}] ~${s.durationSeconds}s: ${s.reason}`).join('\n')
+      : 'nenhum planejado';
 
-    const response = await ai.models.generateContent({
+    const response = await withBackoff(() => ai.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: [{
-        text: `Subtitle timeline (frames):\n${JSON.stringify(frames.map((f) => ({ id: f.id, timeStart: f.timeStart, timeEnd: f.timeEnd, text: f.subtitleText })), null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nNARRATION DIRECTOR SESSION (ordered emotional directions):\n${directorSession}\n\nProject Stylecard:\n${textStylecard || 'Cinematic documentary'}`
+        text: `Subtitle timeline (frames):\n${JSON.stringify(frames.map((f) => ({ id: f.id, timeStart: f.timeStart, timeEnd: f.timeEnd, text: f.subtitleText })), null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${registryText}\n\nNARRATION DIRECTOR SESSION (ordered emotional directions):\n${directorSession}\n\nSTRATEGIC SILENCES (from the Sound Designer — the music MUST honor these dropouts):\n${silencesSection}\n\nProject Stylecard:\n${textStylecard || 'Cinematic documentary'}`
       }],
       config: {
         systemInstruction: PROMPT_MUSIC_DIRECTOR,
         responseMimeType: 'application/json'
       }
-    });
+    }), 'Trilha Sonora');
 
     const parsed = extractJsonObject(response.text || '');
     if (!parsed || !Array.isArray(parsed.segments) || parsed.segments.length === 0) {

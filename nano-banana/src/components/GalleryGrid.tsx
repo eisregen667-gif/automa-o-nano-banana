@@ -201,6 +201,11 @@ export const GalleryGrid: React.FC<GalleryGridProps> = ({
                       🎞 B-ROLL
                     </span>
                   )}
+                  {frame.isInsert && (
+                    <span className="bg-sky-400 text-slate-950 font-extrabold text-[10px] px-2.5 py-1 rounded-lg shadow-md">
+                      🗺 INSERT
+                    </span>
+                  )}
                   {frame.qcStatus === 'approved' && (
                     <span className="bg-emerald-500/90 text-slate-950 font-bold text-[10px] px-1.5 py-1 rounded-lg" title="Aprovada no Auto-QC">✓ QC</span>
                   )}

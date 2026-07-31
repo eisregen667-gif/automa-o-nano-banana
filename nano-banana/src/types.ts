@@ -36,12 +36,6 @@ export interface EntityRegistry {
   sources?: GroundingSource[];
 }
 
-export interface EntityReferenceSheet {
-  entityId: string;
-  imageUrl: string;
-  updatedAt: number;
-}
-
 export interface SrtBlock {
   id: number;
   timeStart: string; // e.g. "00:00:10,000"
@@ -59,29 +53,6 @@ export interface StyleCard {
   strength?: number;         // 0 to 1 style strength
 }
 
-export interface CharacterAnchor {
-  characterId: string;
-  nameOrRole: string;
-  physicalAnchor: string;
-}
-
-export interface SceneBreakdownItem {
-  sceneId: string;
-  sceneTitle: string;
-  blockStartId: number;
-  blockEndId: number;
-  sceneDescriptor: string;
-}
-
-export interface StyleBibleData {
-  domainNiche: string;
-  timeEraAndSetting: string;
-  colorPaletteAndLighting: string;
-  renderingStyle: string;
-  characterBible: CharacterAnchor[];
-  sceneBreakdown: SceneBreakdownItem[];
-}
-
 export interface GeneratedFrame {
   id: number;
   timeStart: string;
@@ -93,6 +64,8 @@ export interface GeneratedFrame {
   isTitleCard?: boolean;    // Cartela de documentário (texto na imagem, inserida na sequência)
   cardText?: string;        // Texto exato exibido na cartela (para QC e regeneração)
   isBroll?: boolean;        // Cutaway de B-roll inserido na sequência
+  isInsert?: boolean;       // Insert gráfico (mapa/linha do tempo/diagrama/card de dado)
+  insertType?: string;      // map | timeline | diagram | statcard
   qcStatus?: 'approved' | 'fixed' | 'flagged'; // Resultado do Auto-QC visual
   qcIssues?: string;        // Problemas apontados pelo Auto-QC
   cameraShot?: string;      // e.g. "Close-up", "Wide shot", "Drone shot"
@@ -116,31 +89,6 @@ export interface QueueProgressState {
 
 export interface GeneratorConfig {
   model: 'gemini-3.1-flash-lite-image' | 'gemini-3.1-flash-image' | 'artistic-canvas-fallback';
-  qualityResolution: '512px' | '1K' | '2K';
-  customProvider: 'gemini' | 'fal_ai' | 'replicate' | 'leonardo' | 'canvas_demo';
   customApiKey?: string;
   filenameTemplate: '{index}_{start}_{end}' | '{index}_{start}' | 'frame_{index}';
-}
-
-export interface ParsePromptsResponse {
-  success: boolean;
-  styleBible?: StyleBibleData;
-  entityRegistry?: EntityRegistry;
-  frames?: {
-    id: number;
-    timeStart: string;
-    timeEnd: string;
-    subtitleText: string;
-    visualPrompt: string;
-    cameraShot?: string;
-    mood?: string;
-    sceneId?: string;
-  }[];
-  error?: string;
-}
-
-export interface GenerateImageResponse {
-  success: boolean;
-  imageUrl?: string;
-  error?: string;
 }
