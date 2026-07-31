@@ -274,8 +274,9 @@ export default function App() {
         await setDbItem('entityRefDescs', savedDescs);
       }
 
-      // Pass 2 em lotes PARALELOS (3 agentes): os lotes são independentes
-      // entre si — o contexto de continuidade vem do próprio SRT
+      // Pass 2 em lotes PARALELOS (8 agentes): cada agente é o mesmo Diretor
+      // Visual treinado (mesmo system prompt + registro canônico + fact sheet),
+      // então escalar não muda a qualidade — a continuidade vem do próprio SRT
       const batchSize = 10;
       const batchDefs: { batch: SrtBlock[]; context: SrtBlock[] }[] = [];
       for (let i = 0; i < srtBlocks.length; i += batchSize) {
@@ -300,7 +301,7 @@ export default function App() {
           );
         }
       };
-      await Promise.all(Array.from({ length: Math.min(3, batchDefs.length) }, () => promptWorker()));
+      await Promise.all(Array.from({ length: Math.min(8, batchDefs.length) }, () => promptWorker()));
       const allFrames: any[] = batchResults.flat();
 
       logSuccess(`Passada 2 concluída: ${allFrames.length} prompts visuais gerados.`);
@@ -983,7 +984,7 @@ export default function App() {
           Object.assign(promptMap, batchResult);
         }
       };
-      await Promise.all(Array.from({ length: Math.min(3, videoBatches.length) }, () => videoWorker()));
+      await Promise.all(Array.from({ length: Math.min(8, videoBatches.length) }, () => videoWorker()));
 
       setFrames((prev) => {
         const next = prev.map((f) => (promptMap[f.id] ? { ...f, videoPrompt: promptMap[f.id] } : f));

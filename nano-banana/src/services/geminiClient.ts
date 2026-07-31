@@ -21,6 +21,24 @@ function getClient(apiKey: string): GoogleGenAI {
   });
 }
 
+// Retry com backoff exponencial para limites de taxa/instabilidade da API —
+// permite rodar muitos agentes em paralelo sem perder lotes por 429/503.
+async function withBackoff<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  const delays = [2000, 5000, 12000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      const retryable = /429|RESOURCE_EXHAUSTED|quota|rate ?limit|overloaded|503|500|UNAVAILABLE|Failed to fetch|network/i.test(msg);
+      if (!retryable || attempt >= delays.length) throw err;
+      const wait = delays[attempt] + Math.floor(Math.random() * 1000);
+      logWarn(`${label}: API ocupada (${msg.slice(0, 90)}). Nova tentativa em ${Math.round(wait / 1000)}s...`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+}
+
 // Helper to clean JSON string from Gemini (stripping markdown fences)
 function cleanGeminiJson(rawText: string): string {
   let cleaned = rawText.trim();
@@ -314,7 +332,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
 
   let frames: ParsedPromptFrame[] = [];
   try {
-    const response = await ai.models.generateContent({
+    const response = await withBackoff(() => ai.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: promptPayload,
       config: {
@@ -322,7 +340,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
         responseMimeType: 'application/json',
         responseSchema: PROMPT_FRAME_SCHEMA
       }
-    });
+    }), `Passada 2 (blocos #${firstId}-#${lastId})`);
 
     frames = JSON.parse(cleanGeminiJson(response.text || '[]'));
     if (!Array.isArray(frames)) frames = [];
@@ -343,7 +361,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
       try {
         const targetedUserPrompt = `Alguns blocos do SRT ficaram faltantes na geração inicial. Gere os prompts visuais APENAS para os seguintes blocos SRT faltantes:\n${JSON.stringify(missingBlocks, null, 2)}\n\nCANONICAL ENTITY REGISTRY:\n${entityRegistryText}`;
 
-        const retryRes = await ai.models.generateContent({
+        const retryRes = await withBackoff(() => ai.models.generateContent({
           model: GEMINI_TEXT_MODEL,
           contents: [{ text: targetedUserPrompt }],
           config: {
@@ -351,7 +369,7 @@ ${textStylecard || 'Cinematic 35mm photograph, hyper-detailed 8k resolution'}`;
             responseMimeType: 'application/json',
             responseSchema: PROMPT_FRAME_SCHEMA
           }
-        });
+        }), 'Passada 2 (retry de faltantes)');
 
         if (retryRes.text) {
           const missingFrames = JSON.parse(cleanGeminiJson(retryRes.text));
@@ -880,7 +898,7 @@ export async function generateVideoPrompts(
 
   try {
     const ai = getClient(key);
-    const response = await ai.models.generateContent({
+    const response = await withBackoff(() => ai.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: [{
         text: `Frames to animate (still image prompt + subtitle + clip duration in seconds):\n${JSON.stringify(items, null, 2)}`
@@ -900,7 +918,7 @@ export async function generateVideoPrompts(
           }
         }
       }
-    });
+    }), `Passada 3 (frames #${firstId}-#${lastId})`);
 
     const parsed = JSON.parse(cleanGeminiJson(response.text || '[]'));
     if (Array.isArray(parsed)) {
