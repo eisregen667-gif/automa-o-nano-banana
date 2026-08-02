@@ -79,6 +79,12 @@ const STYLE_PRESETS = [
     name: 'Ilustração Minimalista',
     icon: '✏️',
     text: 'Clean flat vector illustration, bold confident linework, harmonious modern color palette, elegant use of negative space, editorial graphic design aesthetic'
+  },
+  {
+    id: 'editorial_explainer',
+    name: 'Explainer Editorial (Vox)',
+    icon: '📰',
+    text: 'Editorial explainer collage style: cut-out photographs with white sticker outlines floating over bold flat color backgrounds, paper texture layers, oversized magazine typography mixing elegant serif and heavy sans-serif, yellow highlighter strokes on key words, hand-drawn annotation arrows and scribbled circles, duotone photo treatments, flat design maps and charts, clean modern journalism aesthetic'
   }
 ];
 

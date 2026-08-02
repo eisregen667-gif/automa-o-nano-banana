@@ -764,6 +764,35 @@ RULES:
       behind the text.
    d) ARCHIVAL: vintage map, document or photographic-plate aesthetic
       matching the era, text integrated like a period caption.
+   e) EDITORIAL COLLAGE (Vox style): cut-out photographic element with
+      a white sticker outline floating over a bold flat color or paper
+      background, oversized magazine typography (serif + heavy sans
+      mix), a yellow highlighter stroke or scribbled underline on the
+      key word, optional hand-drawn annotation arrow, duotone photo
+      treatment. Modern journalism energy.
+   f) EVIDENCE BOARD (true crime / investigation): corkboard or steel
+      table seen from above, the text as a typewritten label or case
+      file tab among pinned recreated photos, red string connections,
+      paper clips, harsh desk-lamp light. All pinned material follows
+      the recreated-media rules (no real likenesses, generic props).
+   g) TECHNICAL BLUEPRINT (engineering/science/industrial): white or
+      cyan line-work on deep blueprint blue (or dark graphite),
+      measured annotations, section marks, the text set like a
+      drawing-title block in engineering lettering.
+   h) MUSEUM MINIMAL (prestige/biography): vast negative space in a
+      single deep color or soft gradient, one small refined serif line
+      perfectly kerned — the Netflix-prestige chapter card look.
+   i) DIGITAL HUD (tech/sci-fi/modern): thin glowing interface lines,
+      subtle grid and data glyphs on near-black, the text as a sharp
+      terminal or variable-width sans readout, one accent color.
+   j) RETRO PRINT (pop history/culture): risograph or halftone print
+      texture, slightly off-register inks, vintage poster typography
+      matched to the depicted decade.
+   - PROJECT DESIGN LANGUAGE LOCK: choose ONE design language for the
+     whole documentary based on niche + Stylecard (a-d lean cinematic/
+     historical; e-j lean modern/editorial) and keep EVERY card in that
+     same language — variety comes from composition, never from mixing
+     languages. State the language in designStyle.
    - TYPOGRAPHY ENGINE (CONTEXTUAL FONTS — MANDATORY):
      * Describe the typeface CHARACTER explicitly inside the
        imagePrompt, matched to era and niche: engraved old-style serif
@@ -954,6 +983,18 @@ B. TEXT LEGIBILITY GUARDRAILS (same as recreated media): at most ONE
    short legible text element (max 5 words or one number + label),
    correctly spelled, era-accurate typography; ALL other labels tiny,
    soft or illegible by depth of field. State this in the prompt.
+
+B-2. DESIGN LANGUAGE (match the title cards): render every insert in
+   ONE consistent design language chosen from the niche + Stylecard —
+   the same lexicon the title-card director uses:
+   period/archival (aged parchment maps, engraved diagrams, sepia
+   timelines) for historical niches; EDITORIAL COLLAGE (Vox style:
+   cut-out photos with sticker outlines on flat color, duotone,
+   highlighter strokes, hand-drawn arrows, flat-design maps) for
+   modern journalism topics; TECHNICAL BLUEPRINT for engineering and
+   science; EVIDENCE BOARD for true crime; DIGITAL HUD for tech and
+   sci-fi; RETRO PRINT halftone for pop history. Pick ONE language
+   and keep every insert of the documentary in it — never mix.
 
 C. FACTUAL LOCK: geography, dates and figures come from the
    fact_sheet/script ONLY. Real region shapes for maps. Never invent.
