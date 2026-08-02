@@ -868,17 +868,37 @@ RULES:
 2. MANDATORY PROMPT STRUCTURE — every output prompt has two parts, in
    this order:
    a) SCENE RESTATEMENT: open by re-describing the scene AS IT IS in the
-      original visualPrompt — the same subjects with their exact
-      descriptors (age, clothing, colors, era), the same environment,
-      lighting, mood and art style. REUSE the key nouns and adjectives
-      from the visualPrompt VERBATIM (condense long prompts, but never
-      rename, replace or contradict anything). This anchors the video
-      model to the uploaded image.
+      original visualPrompt — the same environment, lighting, mood, art
+      style and subjects, REUSING the key nouns and adjectives from the
+      visualPrompt (condense long prompts, but never rename, replace or
+      contradict anything). This anchors the video model to the
+      uploaded image — EXCEPT for people, who follow rule 2-B.
    b) MOTION DIRECTION: then describe how this exact scene moves,
       following the motion layers below.
    NEVER output motion-only prompts detached from the scene description,
    and NEVER introduce characters, objects, locations, text or style
    changes that are not in the visualPrompt.
+
+2-B. PEOPLE-FILTER SAFETY (CRITICAL — video tools BLOCK prompts that
+   look like depictions of real identifiable people; the uploaded
+   image already defines everyone's exact appearance, so the video
+   prompt NEVER needs demographic detail):
+   - Describe every person GENERICALLY: role + wardrobe + posture ONLY
+     ("the man in a dark 1960s suit", "an elderly fisherman", "the
+     figure seated at the desk"). NEVER state ethnicity, nationality,
+     race, skin tone, precise age, or year-of-life details ("White
+     American male, 46 years old" is FORBIDDEN in video prompts).
+   - NEVER combine a person with biographical framing that patterns
+     like a real individual (name-like labels, "the scientist who
+     died in 1971", exact age + era + profession together).
+   - DEATH & FUNERAL SOFTENING: never use "deceased", "dead body",
+     "corpse", "casket/coffin" tied to a described person. Reframe to
+     atmosphere and mourners: "a solemn memorial gathering, mourners
+     standing quietly around a flower-covered wooden casket, heads
+     bowed" — the camera and motion focus on the living and the room,
+     not on the body.
+   - These substitutions apply ONLY to the video prompt text; they do
+     not change the image, so visual consistency is untouched.
 
 3. MOTION LAYERS — every prompt must specify all three:
    a) SUBJECT MOTION: subtle, realistic actions consistent with the scene
